@@ -50,12 +50,6 @@ struct Entity
 	enum SpriteSheet type;
 };
 
-struct Camera
-{
-	struct Vec2d pos;
-	struct Vec2d oldpos;
-};
-
 struct GameState
 {
 	struct Window* window;
@@ -64,8 +58,6 @@ struct GameState
 	struct Tile tiles[TILELEVEL_COUNT][TILES_NUM_X][TILES_NUM_Y];
 	struct Entity player;
 	int* running;
-	struct Vec2d camera;
-	struct Vec2d oldcamera;
 } gamestate;
 
 static void onerror(void* udata)
@@ -103,15 +95,8 @@ static void update(void)
 		}
 	}
 
-	gamestate.player.oldpos = gamestate.player.rect.pos;
-	gamestate.oldcamera = rect_getpos(
-		&gamestate.player.rect, 
-		RECTREGPOINT_CENTER
-	);
-	gamestate.oldcamera.x -= gamestate.window->width / 2.0;
-	gamestate.oldcamera.y -= gamestate.window->height / 2.0;
-
 	double speedmod = 1.0;
+	gamestate.player.oldpos = gamestate.player.rect.pos;
 	if(gamestate.input->keystate[SDL_SCANCODE_Q])
 	{
 		*gamestate.running = 0;
@@ -195,39 +180,36 @@ static void update(void)
 		gamestate.player.rect.pos.y = MAP_HEIGHT - gamestate.player.rect.height;
 		gamestate.player.oldpos.y = MAP_HEIGHT - gamestate.player.rect.height;
 	}
-
-	gamestate.camera = rect_getpos(&gamestate.player.rect, RECTREGPOINT_CENTER);
-	gamestate.camera.x -= gamestate.window->width / 2.0;
-	gamestate.camera.y -= gamestate.window->height / 2.0;
-
-	if(gamestate.camera.x < 0)
-	{
-		gamestate.camera.x = 0;
-		gamestate.oldcamera.x = 0;
-	}
-	if(gamestate.camera.y < 0)
-	{
-		gamestate.camera.y = 0;
-		gamestate.oldcamera.y = 0;
-	}
-	if(gamestate.camera.x + gamestate.window->width > MAP_WIDTH)
-	{
-		gamestate.camera.x = MAP_WIDTH - gamestate.window->width;
-		gamestate.oldcamera.x = MAP_WIDTH - gamestate.window->width;
-	}
-	if(gamestate.camera.y + gamestate.window->height > MAP_HEIGHT)
-	{
-		gamestate.camera.y = MAP_HEIGHT - gamestate.window->height;
-		gamestate.oldcamera.y = MAP_HEIGHT - gamestate.window->height;
-	}
 }
 
 static void render(double interpolation, double delta)
 {
-	double rendercamerax = gamestate.oldcamera.x + (gamestate.camera.x
-		- gamestate.oldcamera.x) * interpolation;
-	double rendercameray = gamestate.oldcamera.y + (gamestate.camera.y
-		- gamestate.oldcamera.y) * interpolation;
+	double rendercamerax = gamestate.player.oldpos.x 
+		+ (gamestate.player.rect.pos.x - gamestate.player.oldpos.x) 
+		* interpolation - gamestate.window->width / 2.0
+		+ gamestate.player.rect.width / 2.0;
+	double rendercameray = gamestate.player.oldpos.y
+		+ (gamestate.player.rect.pos.y - gamestate.player.oldpos.y)
+		* interpolation - gamestate.window->height / 2.0 
+		+ gamestate.player.rect.height / 2.0;
+
+	if(rendercamerax < 0.0)
+	{
+		rendercamerax = 0.0;
+	}
+	if(rendercameray < 0.0)
+	{
+		rendercameray = 0.0;
+	}
+	if(rendercamerax + gamestate.window->width > MAP_WIDTH)
+	{
+		rendercamerax = MAP_WIDTH - gamestate.window->width;
+	}
+	if(rendercameray + gamestate.window->height > MAP_HEIGHT)
+	{
+		rendercameray = MAP_HEIGHT - gamestate.window->height;
+	}
+
 	for(size_t k = 0; k < TILELEVEL_COUNT; k++)
 	{
 		for(size_t i = 0; i < TILES_NUM_X; i++)
@@ -370,7 +352,6 @@ int main(void)
 				type = SPRITESHEET_STONE;
 			}
 
-			log_info("%i", r);
 			gamestate.tiles[TILELEVEL_ABOVE][i][j].type = type;
 		}
 	}
@@ -407,6 +388,7 @@ int main(void)
 		}
 	}
 
+	texture_dtor(&spritesheet);
 	inputhandler_dtor(&input);
 	window_dtor(&window);
 	cleanup();
