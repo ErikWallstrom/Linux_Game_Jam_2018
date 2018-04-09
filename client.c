@@ -6,7 +6,14 @@
 #include "API2/font.h"
 #include "API2/rect.h"
 #include "API2/log.h"
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <errno.h>
 #include <time.h>
 
 #define TICKS_PER_SEC 30.0
@@ -274,9 +281,60 @@ static void render(double interpolation, double delta)
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 0, 0, 0, 255);
 }
 
-int main(void)
+int main(int argc, char* argv[])
 {
+	if(argc < 3)
+	{
+		printf("Usage: %s [IP] [PORT]\n", argv[0]);
+		return EXIT_FAILURE;
+	}
+
+	signal(SIGPIPE, SIG_IGN);
 	log_seterrorhandler(onerror, NULL);
+	int clientsocket = socket(AF_INET, SOCK_STREAM, 0);
+	if(clientsocket < 0)
+	{
+		log_error("%s", strerror(errno));
+	}
+
+	int result = setsockopt(
+		clientsocket, 
+		IPPROTO_TCP, 
+		TCP_NODELAY, 
+		&(int){1},
+		sizeof(int)
+	);
+	if(result < 0)
+	{
+		log_error("%s", strerror(errno));
+	}
+
+	struct sockaddr_in serveraddr = {
+		.sin_family = AF_INET,
+		.sin_port = htons(atoi(argv[2])),
+		.sin_zero = {0} //Padding
+	};
+
+	result = inet_pton(AF_INET, argv[1], &serveraddr.sin_addr);
+	if(result == 0)
+	{
+		log_error("Invalid IPv4 Address");
+	}
+	else if(result == -1)
+	{
+		log_error("%s", strerror(errno));
+	}
+
+	result = connect(
+		clientsocket, 
+		(struct sockaddr*)&serveraddr, 
+		sizeof serveraddr
+	);
+	if(result < 0)
+	{
+		log_error("%s", strerror(errno));
+	}
+
 	initialize();
 
 	struct Window window;
@@ -382,6 +440,14 @@ int main(void)
 
 		if(secs != window.seconds)
 		{
+			char buffer[12] = "Hello world";
+			result = write(clientsocket, buffer, sizeof buffer);
+			if(result < 0)
+			{
+				log_warning("Lost connection to server (%s)", strerror(errno));
+				break;
+			}
+			
 			log_info("Ticks: %u, FPS: %u", ticks, window.fps);
 			secs = window.seconds;
 			ticks = 0;
@@ -392,4 +458,6 @@ int main(void)
 	inputhandler_dtor(&input);
 	window_dtor(&window);
 	cleanup();
+	close(clientsocket);
 }
+
