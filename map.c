@@ -5,7 +5,7 @@ struct Map* map_ctor(struct Map* self, SDL_Renderer* renderer)
 {
 	log_assert(self, "is NULL");
 	log_assert(renderer, "is NULL");
-	texture_ctorimage(&self->tilesheet, "tiles.png", renderer);
+	texture_ctorimage(&self->tilesheet, "resources/tiles.png", renderer);
 	self->tiles = vec_ctor(struct Tile, 0);
 	self->renderer = renderer;
 

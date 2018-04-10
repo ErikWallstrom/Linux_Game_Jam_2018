@@ -5,11 +5,11 @@
 #include "API2/rect.h"
 #include "API2/vec.h"
 
-#define TILES_NUM_X 50
-#define TILES_NUM_Y 50
-#define TILE_SCALE  5
-#define TILE_WIDTH  16
-#define TILE_HEIGHT 16
+#define TILES_NUM_X 50.0
+#define TILES_NUM_Y 50.0
+#define TILE_SCALE  5.0
+#define TILE_WIDTH  16.0
+#define TILE_HEIGHT 16.0
 #define MAP_WIDTH   (TILE_WIDTH * TILE_SCALE * TILES_NUM_X)
 #define MAP_HEIGHT  (TILE_HEIGHT * TILE_SCALE * TILES_NUM_Y)
 

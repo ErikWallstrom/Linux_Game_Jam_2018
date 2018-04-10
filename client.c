@@ -6,6 +6,7 @@
 #include "API2/font.h"
 #include "API2/rect.h"
 #include "API2/log.h"
+#include "player.h"
 #include "map.h"
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -19,35 +20,6 @@
 
 #define TICKS_PER_SEC 30.0
 #define TICK_RATE (1000.0 / TICKS_PER_SEC)
-#define SPRITE_WIDTH 16
-#define SPRITE_HEIGHT 16
-#define SPRITE_SCALE 5
-#define PLAYER_SPEED (400.0 / TICKS_PER_SEC) 
-
-enum TileLevel
-{
-	TILELEVEL_GROUND,
-	TILELEVEL_ABOVE,
-	TILELEVEL_COUNT,
-};
-
-enum SpriteSheet
-{
-	SPRITESHEET_NONE = -1,
-	SPRITESHEET_STONE,
-	SPRITESHEET_TREE,
-	SPRITESHEET_GRASS,
-	SPRITESHEET_PLAYER,
-	SPRITESHEET_COUNT,
-};
-
-struct Entity
-{
-	struct Transition rotate;
-	struct Rect rect;
-	struct Vec2d oldpos;
-	enum SpriteSheet type;
-};
 
 struct GameState
 {
@@ -55,7 +27,7 @@ struct GameState
 	struct InputHandler* input;
 	struct Texture* spritesheet;
 	struct Map* map;
-	struct Entity player;
+	struct Player* player;
 	int* running;
 } gamestate;
 
@@ -88,6 +60,24 @@ static void update(void)
 	{
 		switch(gamestate.input->events[i].type)
 		{
+		case SDL_KEYUP:
+			switch(gamestate.input->events[i].key.keysym.sym)
+			{
+			case SDLK_w:
+				gamestate.player->selectedanimation = PLAYERSTANDING_BACK;
+				break;
+			case SDLK_s:
+				gamestate.player->selectedanimation = PLAYERSTANDING_FRONT;
+				break;
+			case SDLK_a:
+				gamestate.player->selectedanimation = PLAYERSTANDING_LEFT;
+				break;
+			case SDLK_d:
+				gamestate.player->selectedanimation = PLAYERSTANDING_RIGHT;
+				break;
+			default:;
+			}
+			break;
 		case SDL_QUIT:
 			*gamestate.running = 0;
 		default:;
@@ -95,7 +85,7 @@ static void update(void)
 	}
 
 	double speedmod = 1.0;
-	gamestate.player.oldpos = gamestate.player.rect.pos;
+	gamestate.player->oldpos = gamestate.player->rect.pos;
 	if(gamestate.input->keystate[SDL_SCANCODE_Q])
 	{
 		*gamestate.running = 0;
@@ -115,7 +105,8 @@ static void update(void)
 			gamestate.input->controller,
 			SDL_CONTROLLER_AXIS_LEFTX) < 0)
 	{
-		gamestate.player.rect.pos.x -= PLAYER_SPEED * speedmod;
+		gamestate.player->rect.pos.x -= PLAYER_SPEED * speedmod;
+		gamestate.player->selectedanimation = PLAYERWALKING_LEFT;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_D]
 		|| SDL_GameControllerGetButton(
@@ -125,7 +116,8 @@ static void update(void)
 			gamestate.input->controller,
 			SDL_CONTROLLER_AXIS_LEFTX) > 0)
 	{
-		gamestate.player.rect.pos.x += PLAYER_SPEED * speedmod;
+		gamestate.player->rect.pos.x += PLAYER_SPEED * speedmod;
+		gamestate.player->selectedanimation = PLAYERWALKING_RIGHT;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_W]
 		|| SDL_GameControllerGetButton(
@@ -135,7 +127,8 @@ static void update(void)
 			gamestate.input->controller,
 			SDL_CONTROLLER_AXIS_LEFTY) < 0)
 	{
-		gamestate.player.rect.pos.y -= PLAYER_SPEED * speedmod;
+		gamestate.player->rect.pos.y -= PLAYER_SPEED * speedmod;
+		gamestate.player->selectedanimation = PLAYERWALKING_UP;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_S]
 		|| SDL_GameControllerGetButton(
@@ -145,48 +138,23 @@ static void update(void)
 			gamestate.input->controller,
 			SDL_CONTROLLER_AXIS_LEFTY) > 0)
 	{
-		gamestate.player.rect.pos.y += PLAYER_SPEED * speedmod;
-	}
-	if(gamestate.input->keystate[SDL_SCANCODE_B]
-		|| SDL_GameControllerGetButton(
-			gamestate.input->controller,
-			SDL_CONTROLLER_BUTTON_B))
-	{
-		gamestate.player.rotate.done = 0;
-		if(*gamestate.player.rotate.value == gamestate.player.rotate.to)
-		{
-			*gamestate.player.rotate.value = gamestate.player.rotate.from;
-		}
+		gamestate.player->rect.pos.y += PLAYER_SPEED * speedmod;
+		gamestate.player->selectedanimation = PLAYERWALKING_DOWN;
 	}
 
-	if(gamestate.player.rect.pos.x < 0)
-	{
-		gamestate.player.rect.pos.x = 0;
-	}
-	if(gamestate.player.rect.pos.y < 0)
-	{
-		gamestate.player.rect.pos.y = 0;
-	}
-	if(gamestate.player.rect.pos.x + gamestate.player.rect.width > MAP_WIDTH)
-	{
-		gamestate.player.rect.pos.x = MAP_WIDTH - gamestate.player.rect.width;
-	}
-	if(gamestate.player.rect.pos.y + gamestate.player.rect.height > MAP_HEIGHT)
-	{
-		gamestate.player.rect.pos.y = MAP_HEIGHT - gamestate.player.rect.height;
-	}
+	player_update(gamestate.player);
 }
 
 static void render(double interpolation, double delta)
 {
-	double camerax = gamestate.player.oldpos.x 
-		+ (gamestate.player.rect.pos.x - gamestate.player.oldpos.x) 
+	double camerax = gamestate.player->oldpos.x 
+		+ (gamestate.player->rect.pos.x - gamestate.player->oldpos.x) 
 		* interpolation - gamestate.window->width / 2.0
-		+ gamestate.player.rect.width / 2.0;
-	double cameray = gamestate.player.oldpos.y
-		+ (gamestate.player.rect.pos.y - gamestate.player.oldpos.y)
+		+ gamestate.player->rect.width / 2.0;
+	double cameray = gamestate.player->oldpos.y
+		+ (gamestate.player->rect.pos.y - gamestate.player->oldpos.y)
 		* interpolation - gamestate.window->height / 2.0 
-		+ gamestate.player.rect.height / 2.0;
+		+ gamestate.player->rect.height / 2.0;
 
 	if(camerax < 0.0)
 	{
@@ -206,39 +174,7 @@ static void render(double interpolation, double delta)
 	}
 
 	map_render(gamestate.map, camerax, cameray);
-
-	SDL_RenderCopyEx(
-		gamestate.window->renderer,
-		gamestate.spritesheet->raw,
-		&(SDL_Rect){
-			gamestate.player.type * SPRITE_WIDTH,
-			0,
-			SPRITE_WIDTH,
-			SPRITE_HEIGHT
-		},
-		&(SDL_Rect){
-			gamestate.player.oldpos.x + (gamestate.player.rect.pos.x
-				- gamestate.player.oldpos.x) * interpolation - camerax, 
-			gamestate.player.oldpos.y + (gamestate.player.rect.pos.y
-				- gamestate.player.oldpos.y) * interpolation - cameray,  
-			gamestate.player.rect.width,
-			gamestate.player.rect.height
-		},
-		*gamestate.player.rotate.value/*atan2(
-			SDL_GameControllerGetAxis(
-				gamestate.input->controller, 
-				SDL_CONTROLLER_AXIS_RIGHTY
-			), 
-			SDL_GameControllerGetAxis(
-				gamestate.input->controller, 
-				SDL_CONTROLLER_AXIS_RIGHTX
-			)
-		) * ( 180.0 / M_PI ) + 90.0*/,
-		NULL,
-		SDL_FLIP_NONE
-	);
-
-	transition_update(&gamestate.player.rotate, delta);
+	player_render(gamestate.player, interpolation, delta, camerax, cameray);
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 0, 0, 0, 255);
 }
 
@@ -301,22 +237,19 @@ int main(int argc, char* argv[])
 	initialize();
 
 	struct Window window;
-	window_ctor(
-		&window, 
-		"Game Window", 
-		1600, 
-		900, 
-		WINDOW_VSYNC | WINDOW_FULLSCREEN
-	);
+	window_ctor(&window, "Game Window", 1600, 900, WINDOW_DEFAULT);
 
 	struct InputHandler input;
 	inputhandler_ctor(&input);
 
 	struct Texture spritesheet;
-	texture_ctorimage(&spritesheet, "tiles.png", window.renderer);
+	texture_ctorimage(&spritesheet, "resources/tiles.png", window.renderer);
 
 	struct Map map;
 	map_ctor(&map, window.renderer);
+
+	struct Player player;
+	player_ctor(&player, window.renderer);
 
 	int running = 1;
 	gamestate.running = &running;
@@ -324,25 +257,7 @@ int main(int argc, char* argv[])
 	gamestate.window = &window;
 	gamestate.input = &input;
 	gamestate.map = &map;
-	gamestate.player.type = SPRITESHEET_PLAYER;
-	rect_ctor(
-		&gamestate.player.rect, 
-		(struct Vec2d){window.width / 2.0, window.height / 2.0},
-		RECTREGPOINT_CENTER,
-		SPRITE_WIDTH * SPRITE_SCALE,
-		SPRITE_HEIGHT * SPRITE_SCALE
-	);
-
-	double value;
-	transition_ctor(
-		&gamestate.player.rotate, 
-		TRANSITIONTYPE_DEFAULT, 
-		0, 
-		360, 
-		500, 
-		&value
-	);
-	gamestate.player.rotate.done = 1;
+	gamestate.player = &player;
 
 	uint64_t oldtime = getperformancecount();
 	double lag = 0.0;
@@ -386,6 +301,7 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	player_dtor(&player);
 	map_dtor(&map);
 	texture_dtor(&spritesheet);
 	inputhandler_dtor(&input);

@@ -5,7 +5,7 @@ WARNINGS = -Wall -Wextra -Wshadow -Wstrict-prototypes -Wdouble-promotion \
 LIBS = -lSDL2 -lSDL2_image -lSDL2_ttf -lm
 DEBUG_FLAGS = -Og -g3
 RELEASE_FLAGS = -march=native -mtune=native -O2 -DNDEBUG
-CLIENT_FILES = client.c map.c API2/*.c
+CLIENT_FILES = client.c map.c player.c API2/*.c
 SERVER_FILES = server.c API2/log.c API2/ansicode.c
 
 debug:
