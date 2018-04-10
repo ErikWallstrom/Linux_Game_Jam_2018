@@ -6,6 +6,7 @@
 #include "API2/font.h"
 #include "API2/rect.h"
 #include "API2/log.h"
+#include "map.h"
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -21,10 +22,6 @@
 #define SPRITE_WIDTH 16
 #define SPRITE_HEIGHT 16
 #define SPRITE_SCALE 5
-#define TILES_NUM_X 50
-#define TILES_NUM_Y 50
-#define MAP_WIDTH (SPRITE_WIDTH * SPRITE_SCALE * TILES_NUM_X)
-#define MAP_HEIGHT (SPRITE_HEIGHT * SPRITE_SCALE * TILES_NUM_Y)
 #define PLAYER_SPEED (400.0 / TICKS_PER_SEC) 
 
 enum TileLevel
@@ -44,11 +41,6 @@ enum SpriteSheet
 	SPRITESHEET_COUNT,
 };
 
-struct Tile
-{
-	enum SpriteSheet type;
-};
-
 struct Entity
 {
 	struct Transition rotate;
@@ -62,7 +54,7 @@ struct GameState
 	struct Window* window;
 	struct InputHandler* input;
 	struct Texture* spritesheet;
-	struct Tile tiles[TILELEVEL_COUNT][TILES_NUM_X][TILES_NUM_Y];
+	struct Map* map;
 	struct Entity player;
 	int* running;
 } gamestate;
@@ -170,81 +162,50 @@ static void update(void)
 	if(gamestate.player.rect.pos.x < 0)
 	{
 		gamestate.player.rect.pos.x = 0;
-		gamestate.player.oldpos.x = 0;
 	}
 	if(gamestate.player.rect.pos.y < 0)
 	{
 		gamestate.player.rect.pos.y = 0;
-		gamestate.player.oldpos.y = 0;
 	}
 	if(gamestate.player.rect.pos.x + gamestate.player.rect.width > MAP_WIDTH)
 	{
 		gamestate.player.rect.pos.x = MAP_WIDTH - gamestate.player.rect.width;
-		gamestate.player.oldpos.x = MAP_WIDTH - gamestate.player.rect.width;
 	}
 	if(gamestate.player.rect.pos.y + gamestate.player.rect.height > MAP_HEIGHT)
 	{
 		gamestate.player.rect.pos.y = MAP_HEIGHT - gamestate.player.rect.height;
-		gamestate.player.oldpos.y = MAP_HEIGHT - gamestate.player.rect.height;
 	}
 }
 
 static void render(double interpolation, double delta)
 {
-	double rendercamerax = gamestate.player.oldpos.x 
+	double camerax = gamestate.player.oldpos.x 
 		+ (gamestate.player.rect.pos.x - gamestate.player.oldpos.x) 
 		* interpolation - gamestate.window->width / 2.0
 		+ gamestate.player.rect.width / 2.0;
-	double rendercameray = gamestate.player.oldpos.y
+	double cameray = gamestate.player.oldpos.y
 		+ (gamestate.player.rect.pos.y - gamestate.player.oldpos.y)
 		* interpolation - gamestate.window->height / 2.0 
 		+ gamestate.player.rect.height / 2.0;
 
-	if(rendercamerax < 0.0)
+	if(camerax < 0.0)
 	{
-		rendercamerax = 0.0;
+		camerax = 0.0;
 	}
-	if(rendercameray < 0.0)
+	if(cameray < 0.0)
 	{
-		rendercameray = 0.0;
+		cameray = 0.0;
 	}
-	if(rendercamerax + gamestate.window->width > MAP_WIDTH)
+	if(camerax + gamestate.window->width > MAP_WIDTH)
 	{
-		rendercamerax = MAP_WIDTH - gamestate.window->width;
+		camerax = MAP_WIDTH - gamestate.window->width;
 	}
-	if(rendercameray + gamestate.window->height > MAP_HEIGHT)
+	if(cameray + gamestate.window->height > MAP_HEIGHT)
 	{
-		rendercameray = MAP_HEIGHT - gamestate.window->height;
+		cameray = MAP_HEIGHT - gamestate.window->height;
 	}
 
-	for(size_t k = 0; k < TILELEVEL_COUNT; k++)
-	{
-		for(size_t i = 0; i < TILES_NUM_X; i++)
-		{
-			for(size_t j = 0; j < TILES_NUM_Y; j++)
-			{
-				if(gamestate.tiles[k][i][j].type != SPRITESHEET_NONE)
-				{
-					SDL_RenderCopy(
-						gamestate.window->renderer,
-						gamestate.spritesheet->raw,
-						&(SDL_Rect){
-							gamestate.tiles[k][i][j].type * SPRITE_WIDTH,
-							0,
-							SPRITE_WIDTH,
-							SPRITE_HEIGHT
-						},
-						&(SDL_Rect){
-							i * SPRITE_WIDTH * SPRITE_SCALE - rendercamerax,
-							j * SPRITE_HEIGHT * SPRITE_SCALE - rendercameray,
-							SPRITE_WIDTH * SPRITE_SCALE,
-							SPRITE_HEIGHT * SPRITE_SCALE
-						}
-					);
-				}
-			}
-		}
-	}
+	map_render(gamestate.map, camerax, cameray);
 
 	SDL_RenderCopyEx(
 		gamestate.window->renderer,
@@ -257,9 +218,9 @@ static void render(double interpolation, double delta)
 		},
 		&(SDL_Rect){
 			gamestate.player.oldpos.x + (gamestate.player.rect.pos.x
-				- gamestate.player.oldpos.x) * interpolation - rendercamerax, 
+				- gamestate.player.oldpos.x) * interpolation - camerax, 
 			gamestate.player.oldpos.y + (gamestate.player.rect.pos.y
-				- gamestate.player.oldpos.y) * interpolation - rendercameray,  
+				- gamestate.player.oldpos.y) * interpolation - cameray,  
 			gamestate.player.rect.width,
 			gamestate.player.rect.height
 		},
@@ -283,6 +244,8 @@ static void render(double interpolation, double delta)
 
 int main(int argc, char* argv[])
 {
+	log_seterrorhandler(onerror, NULL);
+	/*
 	if(argc < 3)
 	{
 		printf("Usage: %s [IP] [PORT]\n", argv[0]);
@@ -290,7 +253,6 @@ int main(int argc, char* argv[])
 	}
 
 	signal(SIGPIPE, SIG_IGN);
-	log_seterrorhandler(onerror, NULL);
 	int clientsocket = socket(AF_INET, SOCK_STREAM, 0);
 	if(clientsocket < 0)
 	{
@@ -334,35 +296,34 @@ int main(int argc, char* argv[])
 	{
 		log_error("%s", strerror(errno));
 	}
+	*/
 
 	initialize();
 
 	struct Window window;
-	window_ctor(&window, "Game Window", 1600, 900, WINDOW_DEFAULT);
+	window_ctor(
+		&window, 
+		"Game Window", 
+		1600, 
+		900, 
+		WINDOW_VSYNC | WINDOW_FULLSCREEN
+	);
 
 	struct InputHandler input;
 	inputhandler_ctor(&input);
 
 	struct Texture spritesheet;
-	texture_ctorimage(&spritesheet, "sprites.png", window.renderer);
+	texture_ctorimage(&spritesheet, "tiles.png", window.renderer);
 
-	struct Rect rect;
-	rect_ctor(
-		&rect, 
-		(struct Vec2d){
-			window.width / 2.0, 
-			window.height / 2.0
-		},
-		RECTREGPOINT_CENTER,
-		spritesheet.width,
-		spritesheet.height
-	);
+	struct Map map;
+	map_ctor(&map, window.renderer);
 
 	int running = 1;
 	gamestate.running = &running;
 	gamestate.spritesheet = &spritesheet;
 	gamestate.window = &window;
 	gamestate.input = &input;
+	gamestate.map = &map;
 	gamestate.player.type = SPRITESHEET_PLAYER;
 	rect_ctor(
 		&gamestate.player.rect, 
@@ -382,37 +343,6 @@ int main(int argc, char* argv[])
 		&value
 	);
 	gamestate.player.rotate.done = 1;
-
-	for(size_t i = 0; i < TILES_NUM_X; i++)
-	{
-		for(size_t j = 0; j < TILES_NUM_Y; j++)
-		{
-			gamestate.tiles[TILELEVEL_GROUND][i][j].type = SPRITESHEET_GRASS;
-		}
-	}
-
-	for(size_t i = 0; i < TILES_NUM_X; i++)
-	{
-		for(size_t j = 0; j < TILES_NUM_Y; j++)
-		{
-			enum SpriteSheet type;
-			int r = rand() % 10000; 
-			if(r < 9000)
-			{
-				type = SPRITESHEET_NONE;
-			}
-			else if(r < 9600)
-			{
-				type = SPRITESHEET_TREE;
-			}
-			else
-			{
-				type = SPRITESHEET_STONE;
-			}
-
-			gamestate.tiles[TILELEVEL_ABOVE][i][j].type = type;
-		}
-	}
 
 	uint64_t oldtime = getperformancecount();
 	double lag = 0.0;
@@ -440,6 +370,7 @@ int main(int argc, char* argv[])
 
 		if(secs != window.seconds)
 		{
+			/*
 			char buffer[12] = "Hello world";
 			result = write(clientsocket, buffer, sizeof buffer);
 			if(result < 0)
@@ -447,6 +378,7 @@ int main(int argc, char* argv[])
 				log_warning("Lost connection to server (%s)", strerror(errno));
 				break;
 			}
+			*/
 			
 			log_info("Ticks: %u, FPS: %u", ticks, window.fps);
 			secs = window.seconds;
@@ -454,10 +386,11 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	map_dtor(&map);
 	texture_dtor(&spritesheet);
 	inputhandler_dtor(&input);
 	window_dtor(&window);
 	cleanup();
-	close(clientsocket);
+	//close(clientsocket);
 }
 
