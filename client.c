@@ -8,18 +8,20 @@
 #include "API2/log.h"
 #include "player.h"
 #include "map.h"
+/*
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
 #include <signal.h>
 #include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+*/
 #include <time.h>
 
 #define TICKS_PER_SEC 30.0
-#define TICK_RATE (1000.0 / TICKS_PER_SEC)
+const double TICK_RATE = 1000.0 / TICKS_PER_SEC;
 
 struct GameState
 {
@@ -60,89 +62,82 @@ static void update(void)
 	{
 		switch(gamestate.input->events[i].type)
 		{
-		case SDL_KEYUP:
+		case SDL_KEYDOWN:
 			switch(gamestate.input->events[i].key.keysym.sym)
 			{
-			case SDLK_w:
-				gamestate.player->selectedanimation = PLAYERSTANDING_BACK;
+			case SDLK_q:
+				*gamestate.running = 0;
 				break;
-			case SDLK_s:
-				gamestate.player->selectedanimation = PLAYERSTANDING_FRONT;
-				break;
-			case SDLK_a:
-				gamestate.player->selectedanimation = PLAYERSTANDING_LEFT;
-				break;
-			case SDLK_d:
-				gamestate.player->selectedanimation = PLAYERSTANDING_RIGHT;
-				break;
+
 			default:;
 			}
 			break;
+
 		case SDL_QUIT:
 			*gamestate.running = 0;
+
 		default:;
 		}
 	}
 
-	double speedmod = 1.0;
-	gamestate.player->oldpos = gamestate.player->rect.pos;
-	if(gamestate.input->keystate[SDL_SCANCODE_Q])
-	{
-		*gamestate.running = 0;
-	}
-	if(gamestate.input->keystate[SDL_SCANCODE_LSHIFT]
-		|| SDL_GameControllerGetAxis(
-			gamestate.input->controller,
-			SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 0)
-	{
-		speedmod = 2.0;
-	}
+	struct Vec2d movement = {0};
 	if(gamestate.input->keystate[SDL_SCANCODE_A]
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
-			SDL_CONTROLLER_BUTTON_DPAD_LEFT)
-		|| SDL_GameControllerGetAxis(
-			gamestate.input->controller,
-			SDL_CONTROLLER_AXIS_LEFTX) < 0)
+			SDL_CONTROLLER_BUTTON_DPAD_LEFT))
 	{
-		gamestate.player->rect.pos.x -= PLAYER_SPEED * speedmod;
-		gamestate.player->selectedanimation = PLAYERWALKING_LEFT;
+		movement.x = -PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_D]
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
-			SDL_CONTROLLER_BUTTON_DPAD_RIGHT)
-		|| SDL_GameControllerGetAxis(
-			gamestate.input->controller,
-			SDL_CONTROLLER_AXIS_LEFTX) > 0)
+			SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
 	{
-		gamestate.player->rect.pos.x += PLAYER_SPEED * speedmod;
-		gamestate.player->selectedanimation = PLAYERWALKING_RIGHT;
+		movement.x = PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_W]
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_UP)
-		|| SDL_GameControllerGetAxis(
-			gamestate.input->controller,
-			SDL_CONTROLLER_AXIS_LEFTY) < 0)
+		)
 	{
-		gamestate.player->rect.pos.y -= PLAYER_SPEED * speedmod;
-		gamestate.player->selectedanimation = PLAYERWALKING_UP;
+		movement.y = -PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_S]
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_DOWN)
-		|| SDL_GameControllerGetAxis(
-			gamestate.input->controller,
-			SDL_CONTROLLER_AXIS_LEFTY) > 0)
+		)
 	{
-		gamestate.player->rect.pos.y += PLAYER_SPEED * speedmod;
-		gamestate.player->selectedanimation = PLAYERWALKING_DOWN;
+		movement.y = PLAYER_SPEED;
 	}
 
-	player_update(gamestate.player);
+	if(SDL_GameControllerGetAxis(
+			gamestate.input->controller, 
+			SDL_CONTROLLER_AXIS_LEFTX) 
+		|| SDL_GameControllerGetAxis(
+			gamestate.input->controller, 
+			SDL_CONTROLLER_AXIS_LEFTY)
+		)
+	{ 
+
+		double angle = atan2(
+			SDL_GameControllerGetAxis(
+				gamestate.input->controller, 
+				SDL_CONTROLLER_AXIS_LEFTY
+			), 
+			SDL_GameControllerGetAxis(
+				gamestate.input->controller, 
+				SDL_CONTROLLER_AXIS_LEFTX
+			)
+		);
+
+		movement.x = cos(angle) * PLAYER_SPEED;
+		movement.y = sin(angle) * PLAYER_SPEED;
+	}
+
+	vec2d_normalize(&movement, &gamestate.player->direction);
+	player_update(gamestate.player, gamestate.map);
 }
 
 static void render(double interpolation, double delta)
@@ -181,8 +176,7 @@ static void render(double interpolation, double delta)
 int main(int argc, char* argv[])
 {
 	log_seterrorhandler(onerror, NULL);
-	/*
-	if(argc < 3)
+	/* if(argc < 3)
 	{
 		printf("Usage: %s [IP] [PORT]\n", argv[0]);
 		return EXIT_FAILURE;
@@ -231,13 +225,12 @@ int main(int argc, char* argv[])
 	if(result < 0)
 	{
 		log_error("%s", strerror(errno));
-	}
-	*/
+	} */
 
 	initialize();
 
 	struct Window window;
-	window_ctor(&window, "Game Window", 1600, 900, WINDOW_DEFAULT);
+	window_ctor(&window, "Game Window", 1360, 765, WINDOW_DEFAULT);
 
 	struct InputHandler input;
 	inputhandler_ctor(&input);
@@ -260,10 +253,8 @@ int main(int argc, char* argv[])
 	gamestate.player = &player;
 
 	uint64_t oldtime = getperformancecount();
-	double lag = 0.0;
-
 	unsigned ticks = 0;
-	unsigned secs = 0;
+	double lag = 0.0;
 	while(running)
 	{
 		uint64_t curtime = getperformancecount();
@@ -283,6 +274,8 @@ int main(int argc, char* argv[])
 		render(interpolation, delta);
 		window_render(&window);
 
+#ifndef NDEBUG
+		static unsigned secs = 0;
 		if(secs != window.seconds)
 		{
 			/*
@@ -299,6 +292,7 @@ int main(int argc, char* argv[])
 			secs = window.seconds;
 			ticks = 0;
 		}
+#endif
 	}
 
 	player_dtor(&player);

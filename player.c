@@ -2,6 +2,8 @@
 #include "map.h"
 #include "API2/log.h"
 
+extern const double TICK_RATE; //XXX: hacky
+
 struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer)
 {
 	log_assert(self, "is NULL");
@@ -171,7 +173,7 @@ struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer)
 	};
 
 	self->oldpos = self->rect.pos;
-	self->velocity = (struct Vec2d){0};
+	self->direction = (struct Vec2d){0};
 	self->force = (struct Vec2d){0};
 	self->renderer = renderer;
 	self->selectedanimation = PLAYERSTANDING_FRONT;
@@ -181,9 +183,71 @@ struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer)
 	return self;
 }
 
-void player_update(struct Player* self)
+void player_update(struct Player* self, struct Map* map)
 {
 	log_assert(self, "is NULL");
+
+	struct Vec2d olddirection = self->direction;
+	self->oldpos = self->rect.pos;
+	vec2d_scale(&self->direction, PLAYER_SPEED / TICK_RATE, &self->direction);
+
+	self->rect.pos.x += self->direction.x;
+	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
+	{
+		if(rect_intersects(&self->rect, &map->tiles[i].rect))
+		{
+			struct Vec2d pos1 = rect_getpos(
+				&self->rect, 
+				RECTREGPOINT_CENTER
+			);
+
+			struct Vec2d pos2 = rect_getpos(
+				&map->tiles[i].rect, 
+				RECTREGPOINT_CENTER
+			);
+
+			if(pos1.x < pos2.x)
+			{
+				self->rect.pos.x = map->tiles[i].rect.pos.x - self->rect.width;
+			}
+			else
+			{
+				self->rect.pos.x = map->tiles[i].rect.pos.x 
+					+ map->tiles[i].rect.width;
+			}
+
+			//self->direction.x = 0.0;
+		}
+	}
+
+	self->rect.pos.y += self->direction.y;
+	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
+	{
+		if(rect_intersects(&self->rect, &map->tiles[i].rect))
+		{
+			struct Vec2d pos1 = rect_getpos(
+				&self->rect, 
+				RECTREGPOINT_CENTER
+			);
+
+			struct Vec2d pos2 = rect_getpos(
+				&map->tiles[i].rect, 
+				RECTREGPOINT_CENTER
+			);
+
+			if(pos1.y < pos2.y)
+			{
+				self->rect.pos.y = map->tiles[i].rect.pos.y - self->rect.height;
+			}
+			else
+			{
+				self->rect.pos.y = map->tiles[i].rect.pos.y 
+					+ map->tiles[i].rect.height;
+			}
+
+			//self->direction.y = 0.0;
+		}
+	}
 
 	if(self->rect.pos.x < 0)
 	{
@@ -201,6 +265,58 @@ void player_update(struct Player* self)
 	{
 		self->rect.pos.y = MAP_HEIGHT - self->rect.height;
 	}
+
+	//Animation stuff
+	self->direction = olddirection;
+	int prevanimation = self->selectedanimation;
+	int stoppedx = 0;
+	int stoppedy = 0;
+
+	if(self->direction.y > 0.0)
+	{
+		self->selectedanimation = PLAYERWALKING_DOWN;
+	}
+	else if(self->direction.y < 0.0)
+	{
+		self->selectedanimation = PLAYERWALKING_UP;
+	}
+	else
+	{
+		stoppedy = 1;
+	}
+
+	if(self->direction.x > 0.0)
+	{
+		if(fabs(self->direction.y) < 0.7) //Set to 0.71 to make change animation
+		{
+			self->selectedanimation = PLAYERWALKING_RIGHT;
+		}
+	}
+	else if(self->direction.x < 0.0)
+	{
+		if(fabs(self->direction.y) < 0.7) //Set to 0.71 to make change animation
+		{
+			self->selectedanimation = PLAYERWALKING_LEFT;
+		}
+	}
+	else
+	{
+		stoppedx = 1;
+	}
+
+	if(stoppedx && (prevanimation == PLAYERWALKING_LEFT 
+		|| prevanimation == PLAYERWALKING_RIGHT))
+	{
+		self->selectedanimation = prevanimation - PLAYERSTANDING_LEFT - 1;
+	}
+	else if(stoppedy && (prevanimation == PLAYERWALKING_UP 
+		|| prevanimation == PLAYERWALKING_DOWN))
+	{
+		self->selectedanimation = prevanimation - PLAYERSTANDING_LEFT - 1;
+	}
+
+	self->direction.x = 0.0;
+	self->direction.y = 0.0;
 }
 
 void player_render(
@@ -210,17 +326,6 @@ void player_render(
 	double camerax, 
 	double cameray)
 { 
-	/*atan2(
-		SDL_GameControllerGetAxis(
-			gamestate.input->controller, 
-			SDL_CONTROLLER_AXIS_RIGHTY
-		), 
-		SDL_GameControllerGetAxis(
-			gamestate.input->controller, 
-			SDL_CONTROLLER_AXIS_RIGHTX
-		)
-	) * ( 180.0 / M_PI ) + 90.0*/
-
 	log_assert(self, "is NULL");
 	animation_update(&self->animations[self->selectedanimation], delta);
 

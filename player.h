@@ -5,11 +5,12 @@
 #include "API2/texture.h"
 #include "API2/window.h"
 #include "API2/rect.h"
+#include "map.h"
 
-#define PLAYER_SPEED (400.0 / TICKS_PER_SEC) 
-#define PLAYER_WIDTH 10.0
+#define PLAYER_SPEED  400.0
+#define PLAYER_WIDTH  10.0
 #define PLAYER_HEIGHT 16.0
-#define PLAYER_SCALE 5.0
+#define PLAYER_SCALE  4.0
 
 enum PlayerStanding
 {
@@ -34,7 +35,7 @@ struct Player
 	struct Texture spritesheet;
 	struct Rect rect;
 	struct Vec2d oldpos;
-	struct Vec2d velocity;
+	struct Vec2d direction;
 	struct Vec2d force;
 	SDL_Renderer* renderer;
 	size_t selectedanimation;
@@ -42,7 +43,7 @@ struct Player
 };
 
 struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer);
-void player_update(struct Player* self);
+void player_update(struct Player* self, struct Map* map);
 void player_render(
 	struct Player* self, 
 	double interpolation, 
