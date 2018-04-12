@@ -191,7 +191,14 @@ void player_update(struct Player* self, struct Map* map)
 	self->oldpos = self->rect.pos;
 	vec2d_scale(&self->direction, PLAYER_SPEED / TICK_RATE, &self->direction);
 
-	self->rect.pos.x += self->direction.x;
+	if(self->force.x == 0.0)
+	{
+		self->rect.pos.x += self->direction.x;
+	}
+	else
+	{
+		self->rect.pos.x += self->force.x;
+	}
 	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
 	{
 		if(rect_intersects(&self->rect, &map->tiles[i].rect))
@@ -216,11 +223,19 @@ void player_update(struct Player* self, struct Map* map)
 					+ map->tiles[i].rect.width;
 			}
 
+			self->force.x = 0.0;
 			//self->direction.x = 0.0;
 		}
 	}
 
-	self->rect.pos.y += self->direction.y;
+	if(self->force.y == 0.0)
+	{
+		self->rect.pos.y += self->direction.y;
+	}
+	else
+	{
+		self->rect.pos.y += self->force.y;
+	}
 	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
 	{
 		if(rect_intersects(&self->rect, &map->tiles[i].rect))
@@ -245,6 +260,7 @@ void player_update(struct Player* self, struct Map* map)
 					+ map->tiles[i].rect.height;
 			}
 
+			self->force.y = 0.0;
 			//self->direction.y = 0.0;
 		}
 	}
@@ -252,18 +268,22 @@ void player_update(struct Player* self, struct Map* map)
 	if(self->rect.pos.x < 0)
 	{
 		self->rect.pos.x = 0;
+		self->force.x = 0.0;
 	}
 	if(self->rect.pos.y < 0)
 	{
 		self->rect.pos.y = 0;
+		self->force.y = 0.0;
 	}
 	if(self->rect.pos.x + self->rect.width > MAP_WIDTH)
 	{
 		self->rect.pos.x = MAP_WIDTH - self->rect.width;
+		self->force.x = 0.0;
 	}
 	if(self->rect.pos.y + self->rect.height > MAP_HEIGHT)
 	{
 		self->rect.pos.y = MAP_HEIGHT - self->rect.height;
+		self->force.y = 0.0;
 	}
 
 	//Animation stuff
@@ -317,6 +337,22 @@ void player_update(struct Player* self, struct Map* map)
 
 	self->direction.x = 0.0;
 	self->direction.y = 0.0;
+	if(self->force.x < 0.0)
+	{
+		self->force.x += PLAYER_DASHDECAY;
+	}
+	else if(self->force.x > 0.0)
+	{
+		self->force.x -= PLAYER_DASHDECAY;
+	}
+	if(self->force.y < 0.0)
+	{
+		self->force.y += PLAYER_DASHDECAY;
+	}
+	else if(self->force.y > 0.0)
+	{
+		self->force.y -= PLAYER_DASHDECAY;
+	}
 }
 
 void player_render(

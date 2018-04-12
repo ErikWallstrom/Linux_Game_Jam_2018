@@ -6,6 +6,7 @@
 #include "API2/font.h"
 #include "API2/rect.h"
 #include "API2/log.h"
+#include "projectile.h"
 #include "player.h"
 #include "map.h"
 /*
@@ -22,15 +23,27 @@
 
 #define TICKS_PER_SEC 30.0
 const double TICK_RATE = 1000.0 / TICKS_PER_SEC;
+#define CONTROLLER_MAX  32767
+#define CONTROLLER_MIN -32768
+#define DASHFACTOR 10.0
+#define MAXCHARGE 100.0
+#define CHARGESPEED (MAXCHARGE / (TICK_RATE * 1.0))
+#define CHARGETRANSITIONDURATION 200
 
 struct GameState
 {
+	struct Transition chargetransition;
 	struct Window* window;
 	struct InputHandler* input;
 	struct Texture* spritesheet;
 	struct Map* map;
 	struct Player* player;
+	struct Projectiles* projectiles;
 	int* running;
+	double shootcharge;
+	double dashcharge;
+	int shootcharging;
+	int dashcharging;
 } gamestate;
 
 static void onerror(void* udata)
@@ -56,32 +69,94 @@ static uint64_t getperformancecount(void)
 	return ticks;
 }
 
-static void update(void)
+void shoot(void)
 {
-	for(size_t i = 0; i < vec_getsize(gamestate.input->events); i++)
-	{
-		switch(gamestate.input->events[i].type)
-		{
-		case SDL_KEYDOWN:
-			switch(gamestate.input->events[i].key.keysym.sym)
-			{
-			case SDLK_q:
-				*gamestate.running = 0;
-				break;
+	struct Vec2d pos = rect_getpos(
+		&gamestate.player->rect,
+		RECTREGPOINT_CENTER
+	);
 
-			default:;
-			}
+	double rotation = 0.0;
+	if(gamestate.player->direction.x == 0.0 
+		&& gamestate.player->direction.y == 0.0)
+	{
+		switch(gamestate.player->selectedanimation)
+		{
+		case PLAYERSTANDING_LEFT:
+			rotation = M_PI;
 			break;
 
-		case SDL_QUIT:
-			*gamestate.running = 0;
+		case PLAYERSTANDING_RIGHT:
+			rotation = 0.0;
+			break;
 
-		default:;
+		case PLAYERSTANDING_FRONT:
+			rotation = M_PI / 2.0;
+			break;
+
+		case PLAYERSTANDING_BACK:
+			rotation = M_PI * 1.5;
+			break;
 		}
 	}
+	else
+	{
+		rotation = atan2(
+			gamestate.player->direction.y,
+			gamestate.player->direction.x
+		);
+	}
 
+	if(gamestate.shootcharge == MAXCHARGE)
+	{
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation - (M_PI / 20.0) * 2,
+			PROJECTILETYPE_SPECIAL
+		);
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation - (M_PI / 20.0) * 1,
+			PROJECTILETYPE_SPECIAL
+		);
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation,
+			PROJECTILETYPE_SPECIAL
+		);
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation + (M_PI / 20.0) * 1,
+			PROJECTILETYPE_SPECIAL
+		);
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation + (M_PI / 20.0) * 2,
+			PROJECTILETYPE_SPECIAL
+		);
+	}
+	else
+	{
+		projectiles_add(
+			gamestate.projectiles, 
+			pos, 
+			rotation,
+			PROJECTILETYPE_NORMAL
+		);
+	}
+}
+
+static void update(void)
+{
 	struct Vec2d movement = {0};
 	if(gamestate.input->keystate[SDL_SCANCODE_A]
+		|| gamestate.input->keystate[SDL_SCANCODE_H] 
+		|| gamestate.input->keystate[SDL_SCANCODE_LEFT] 
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_LEFT))
@@ -89,6 +164,8 @@ static void update(void)
 		movement.x = -PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_D]
+		|| gamestate.input->keystate[SDL_SCANCODE_L] 
+		|| gamestate.input->keystate[SDL_SCANCODE_RIGHT] 
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
@@ -96,6 +173,8 @@ static void update(void)
 		movement.x = PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_W]
+		|| gamestate.input->keystate[SDL_SCANCODE_K] 
+		|| gamestate.input->keystate[SDL_SCANCODE_UP] 
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_UP)
@@ -104,6 +183,8 @@ static void update(void)
 		movement.y = -PLAYER_SPEED;
 	}
 	if(gamestate.input->keystate[SDL_SCANCODE_S]
+		|| gamestate.input->keystate[SDL_SCANCODE_J] 
+		|| gamestate.input->keystate[SDL_SCANCODE_DOWN] 
 		|| SDL_GameControllerGetButton(
 			gamestate.input->controller,
 			SDL_CONTROLLER_BUTTON_DPAD_DOWN)
@@ -120,7 +201,6 @@ static void update(void)
 			SDL_CONTROLLER_AXIS_LEFTY)
 		)
 	{ 
-
 		double angle = atan2(
 			SDL_GameControllerGetAxis(
 				gamestate.input->controller, 
@@ -137,7 +217,244 @@ static void update(void)
 	}
 
 	vec2d_normalize(&movement, &gamestate.player->direction);
+	for(size_t i = 0; i < vec_getsize(gamestate.input->events); i++)
+	{
+		switch(gamestate.input->events[i].type)
+		{
+		case SDL_CONTROLLERAXISMOTION:
+			if(gamestate.input->events[i].caxis.axis 
+				== SDL_CONTROLLER_AXIS_TRIGGERRIGHT)
+			{
+				if(gamestate.input->events[i].caxis.value == CONTROLLER_MAX)
+				{
+					if(gamestate.player->force.x == 0.0
+						&& gamestate.player->force.y == 0.0)
+					{
+						switch(gamestate.player->selectedanimation)
+						{
+						case PLAYERSTANDING_LEFT:
+						case PLAYERWALKING_LEFT:
+							gamestate.player->force.x = -DASHFACTOR
+								* PLAYER_DASHDECAY;
+							break;
+
+						case PLAYERSTANDING_RIGHT:
+						case PLAYERWALKING_RIGHT:
+							gamestate.player->force.x = DASHFACTOR
+								* PLAYER_DASHDECAY;
+							break;
+
+						case PLAYERSTANDING_FRONT:
+						case PLAYERWALKING_DOWN:
+							gamestate.player->force.y = DASHFACTOR
+								* PLAYER_DASHDECAY;
+							break;
+
+						case PLAYERSTANDING_BACK:
+						case PLAYERWALKING_UP:
+							gamestate.player->force.y = -DASHFACTOR
+								* PLAYER_DASHDECAY;
+							break;
+						}
+
+					}
+					gamestate.dashcharging = 1;
+				}
+				else if(gamestate.input->events[i].caxis.value == 0)
+				{
+					if(gamestate.player->force.x == 0.0
+						&& gamestate.player->force.y == 0.0)
+					{
+						double chargefactor = (gamestate.dashcharge
+							== MAXCHARGE) 
+							? 1.5
+							: 1.0;
+						switch(gamestate.player->selectedanimation)
+						{
+						case PLAYERSTANDING_LEFT:
+						case PLAYERWALKING_LEFT:
+							gamestate.player->force.x = -DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_RIGHT:
+						case PLAYERWALKING_RIGHT:
+							gamestate.player->force.x = DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_FRONT:
+						case PLAYERWALKING_DOWN:
+							gamestate.player->force.y = DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_BACK:
+						case PLAYERWALKING_UP:
+							gamestate.player->force.y = -DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+						}
+					}
+
+					gamestate.dashcharging = 0;
+					gamestate.dashcharge = 0;
+				}
+			}
+			break;
+
+		case SDL_CONTROLLERBUTTONDOWN:
+			switch(gamestate.input->events[i].cbutton.button)
+			{
+				case SDL_CONTROLLER_BUTTON_B:
+					gamestate.shootcharging = 1;
+					break;
+
+				default:;
+			}
+			break;
+
+		case SDL_CONTROLLERBUTTONUP:
+			switch(gamestate.input->events[i].cbutton.button)
+			{
+				case SDL_CONTROLLER_BUTTON_B:
+					shoot();
+					gamestate.shootcharging = 0;
+					gamestate.shootcharge = 0;
+					break;
+
+				default:;
+			}
+			break;
+
+		case SDL_KEYDOWN:
+			switch(gamestate.input->events[i].key.keysym.sym)
+			{
+			case SDLK_q:
+				*gamestate.running = 0;
+				break;
+
+			case SDLK_LSHIFT:
+				if(gamestate.player->force.x == 0.0
+					&& gamestate.player->force.y == 0.0)
+				{
+					switch(gamestate.player->selectedanimation)
+					{
+					case PLAYERSTANDING_LEFT:
+					case PLAYERWALKING_LEFT:
+						gamestate.player->force.x = -DASHFACTOR
+							* PLAYER_DASHDECAY;
+						break;
+
+					case PLAYERSTANDING_RIGHT:
+					case PLAYERWALKING_RIGHT:
+						gamestate.player->force.x = DASHFACTOR 
+							* PLAYER_DASHDECAY;
+						break;
+
+					case PLAYERSTANDING_FRONT:
+					case PLAYERWALKING_DOWN:
+						gamestate.player->force.y = DASHFACTOR 
+							* PLAYER_DASHDECAY;
+						break;
+
+					case PLAYERSTANDING_BACK:
+					case PLAYERWALKING_UP:
+						gamestate.player->force.y = -DASHFACTOR 
+							* PLAYER_DASHDECAY;
+						break;
+					}
+				}
+
+				gamestate.dashcharging = 1;
+				break;
+
+			case SDLK_SPACE:
+				gamestate.shootcharging = 1;
+				break;
+
+			default:;
+			}
+			break;
+
+		case SDL_KEYUP:
+			switch(gamestate.input->events[i].key.keysym.sym)
+			{
+				case SDLK_LSHIFT:
+					if(gamestate.player->force.x == 0.0
+						&& gamestate.player->force.y == 0.0)
+					{
+						double chargefactor = (gamestate.dashcharge
+							== MAXCHARGE) ? 1.5 : 1.0;
+						switch(gamestate.player->selectedanimation)
+						{
+						case PLAYERSTANDING_LEFT:
+						case PLAYERWALKING_LEFT:
+							gamestate.player->force.x = -DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_RIGHT:
+						case PLAYERWALKING_RIGHT:
+							gamestate.player->force.x = DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_FRONT:
+						case PLAYERWALKING_DOWN:
+							gamestate.player->force.y = DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+
+						case PLAYERSTANDING_BACK:
+						case PLAYERWALKING_UP:
+							gamestate.player->force.y = -DASHFACTOR
+								* PLAYER_DASHDECAY * chargefactor;
+							break;
+						}
+					}
+
+					gamestate.dashcharging = 0;
+					gamestate.dashcharge = 0;
+					break;
+
+				case SDLK_SPACE:
+					shoot();
+					gamestate.shootcharging = 0;
+					gamestate.shootcharge = 0;
+					break;
+
+				default:;
+			}
+			break;
+
+		case SDL_QUIT:
+			*gamestate.running = 0;
+
+		default:;
+		}
+	}
+
+	if(gamestate.dashcharging)
+	{
+		gamestate.dashcharge += CHARGESPEED;
+		if(gamestate.dashcharge > MAXCHARGE)
+		{
+			gamestate.dashcharge = MAXCHARGE;
+		}
+	}
+
+	if(gamestate.shootcharging)
+	{
+		gamestate.shootcharge += CHARGESPEED;
+		if(gamestate.shootcharge > MAXCHARGE)
+		{
+			gamestate.shootcharge = MAXCHARGE;
+		}
+	}
+
 	player_update(gamestate.player, gamestate.map);
+	projectiles_update(gamestate.projectiles, gamestate.map);
 }
 
 static void render(double interpolation, double delta)
@@ -168,7 +485,43 @@ static void render(double interpolation, double delta)
 		cameray = MAP_HEIGHT - gamestate.window->height;
 	}
 
+	transition_update(&gamestate.chargetransition, delta);
+	if(gamestate.dashcharge == MAXCHARGE || gamestate.shootcharge == MAXCHARGE)
+	{
+		SDL_SetTextureColorMod(
+			gamestate.player->spritesheet.raw, 
+			(gamestate.shootcharge == MAXCHARGE) 
+				? *gamestate.chargetransition.value
+				: 64,
+			(gamestate.dashcharge == MAXCHARGE) 
+				? *gamestate.chargetransition.value 
+				: 64, 
+			64
+		);
+	}
+
+	if(gamestate.dashcharge == MAXCHARGE)
+	{
+		gamestate.chargetransition.done = 0;
+	}
+	else if(gamestate.shootcharge == MAXCHARGE)
+	{
+		gamestate.chargetransition.done = 0;
+	}
+	else
+	{
+		*gamestate.chargetransition.value = 0.0;
+		gamestate.chargetransition.done = 1;
+		SDL_SetTextureColorMod(
+			gamestate.player->spritesheet.raw, 
+			255, 
+			255, 
+			255
+		);
+	}
+
 	map_render(gamestate.map, camerax, cameray);
+	projectiles_render(gamestate.projectiles, interpolation, camerax, cameray);
 	player_render(gamestate.player, interpolation, delta, camerax, cameray);
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 0, 0, 0, 255);
 }
@@ -230,7 +583,13 @@ int main(int argc, char* argv[])
 	initialize();
 
 	struct Window window;
-	window_ctor(&window, "Game Window", 1360, 765, WINDOW_DEFAULT);
+	window_ctor(
+		&window, 
+		"Game Window", 
+		1200, 
+		675, 
+		/*WINDOW_VSYNC | */WINDOW_FULLSCREEN
+	);
 
 	struct InputHandler input;
 	inputhandler_ctor(&input);
@@ -244,6 +603,9 @@ int main(int argc, char* argv[])
 	struct Player player;
 	player_ctor(&player, window.renderer);
 
+	struct Projectiles projectiles;
+	projectiles_ctor(&projectiles, window.renderer);
+
 	int running = 1;
 	gamestate.running = &running;
 	gamestate.spritesheet = &spritesheet;
@@ -251,6 +613,17 @@ int main(int argc, char* argv[])
 	gamestate.input = &input;
 	gamestate.map = &map;
 	gamestate.player = &player;
+	gamestate.projectiles = &projectiles;
+
+	double value = 0.0;
+	transition_ctor(
+		&gamestate.chargetransition, 
+		TRANSITIONTYPE_FADE,
+		0,
+		255,
+		CHARGETRANSITIONDURATION,
+		&value
+	);
 
 	uint64_t oldtime = getperformancecount();
 	unsigned ticks = 0;
@@ -295,6 +668,7 @@ int main(int argc, char* argv[])
 #endif
 	}
 
+	projectiles_dtor(&projectiles);
 	player_dtor(&player);
 	map_dtor(&map);
 	texture_dtor(&spritesheet);

@@ -7,10 +7,11 @@
 #include "API2/rect.h"
 #include "map.h"
 
-#define PLAYER_SPEED  400.0
-#define PLAYER_WIDTH  10.0
-#define PLAYER_HEIGHT 16.0
-#define PLAYER_SCALE  4.0
+#define PLAYER_SPEED     400.0
+#define PLAYER_WIDTH     10.0
+#define PLAYER_HEIGHT    16.0
+#define PLAYER_SCALE     4.0
+#define PLAYER_DASHDECAY 3
 
 enum PlayerStanding
 {
