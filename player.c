@@ -4,7 +4,10 @@
 
 extern const double TICK_RATE; //XXX: hacky
 
-struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer)
+struct Player* player_ctor(
+	struct Player* self, 
+	struct Vec2d pos, 
+	SDL_Renderer* renderer)
 {
 	log_assert(self, "is NULL");
 	log_assert(renderer, "is NULL");
@@ -166,11 +169,13 @@ struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer)
 		}
 	);
 
-	self->rect = (struct Rect){
-		.pos    = {200.0, 150.0},
-		.width  = PLAYER_WIDTH * PLAYER_SCALE,
-		.height = PLAYER_HEIGHT * PLAYER_SCALE
-	};
+	rect_ctor(
+		&self->rect, 
+		pos, 
+		RECTREGPOINT_CENTER, 
+		PLAYER_WIDTH * PLAYER_SCALE,
+		PLAYER_HEIGHT * PLAYER_SCALE
+	);
 
 	self->oldpos = self->rect.pos;
 	self->direction = (struct Vec2d){0};
@@ -236,6 +241,7 @@ void player_update(struct Player* self, struct Map* map)
 	{
 		self->rect.pos.y += self->force.y;
 	}
+
 	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
 	{
 		if(rect_intersects(&self->rect, &map->tiles[i].rect))

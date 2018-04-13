@@ -3,7 +3,6 @@
 
 #include "API2/animation.h"
 #include "API2/texture.h"
-#include "API2/window.h"
 #include "API2/rect.h"
 #include "map.h"
 
@@ -43,7 +42,10 @@ struct Player
 	int hp;
 };
 
-struct Player* player_ctor(struct Player* self, SDL_Renderer* renderer);
+struct Player* player_ctor(
+	struct Player* self, 
+	struct Vec2d pos, 
+	SDL_Renderer* renderer);
 void player_update(struct Player* self, struct Map* map);
 void player_render(
 	struct Player* self, 

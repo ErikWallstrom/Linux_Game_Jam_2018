@@ -10,7 +10,7 @@ struct Projectiles* projectiles_ctor(
 	log_assert(self, "is NULL");
 	log_assert(renderer, "is NULL");
 
-	self->projectiles = vec_ctor(struct Projectile, 100);
+	self->projectiles = vec_ctor(struct Projectile, 500);
 	self->renderer = renderer;
 	texture_ctorimage(
 		&self->projectilesheet, 

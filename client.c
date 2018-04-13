@@ -8,6 +8,7 @@
 #include "API2/log.h"
 #include "projectile.h"
 #include "player.h"
+#include "enemy.h"
 #include "map.h"
 /*
 #include <netinet/tcp.h>
@@ -30,7 +31,23 @@ const double TICK_RATE = 1000.0 / TICKS_PER_SEC;
 #define CHARGESPEED (MAXCHARGE / (TICK_RATE * 1.0))
 #define CHARGETRANSITIONDURATION 200
 
-struct GameState
+#define WINDOW_WIDTH  1200
+#define WINDOW_HEIGHT 675
+
+#define HPBAR_X      25
+#define HPBAR_Y      15
+#define HPBAR_WIDTH  250
+#define HPBAR_HEIGHT 25
+
+enum GameState
+{
+	GAMESTATE_RUNNING,
+	GAMESTATE_GAMEOVER,
+	GAMESTATE_WIN,
+	GAMESTATE_QUIT
+};
+
+struct Game
 {
 	struct Transition chargetransition;
 	struct Window* window;
@@ -39,7 +56,8 @@ struct GameState
 	struct Map* map;
 	struct Player* player;
 	struct Projectiles* projectiles;
-	int* running;
+	struct Enemies* enemies;
+	enum GameState* state;
 	double shootcharge;
 	double dashcharge;
 	int shootcharging;
@@ -331,7 +349,27 @@ static void update(void)
 			switch(gamestate.input->events[i].key.keysym.sym)
 			{
 			case SDLK_q:
-				*gamestate.running = 0;
+				*gamestate.state = GAMESTATE_QUIT;
+				break;
+
+			case SDLK_r:
+				*gamestate.state = GAMESTATE_WIN;
+				break;
+
+			case SDLK_e:
+				*gamestate.state = GAMESTATE_GAMEOVER;
+				break;
+
+			case SDLK_o:
+				enemies_terrain(gamestate.enemies, gamestate.map);
+				break;
+
+			case SDLK_p:
+				enemies_slimes(gamestate.enemies, 25);
+				break;
+
+			case SDLK_i:
+				enemies_ghosts(gamestate.enemies, 25);
 				break;
 
 			case SDLK_LSHIFT:
@@ -429,7 +467,7 @@ static void update(void)
 			break;
 
 		case SDL_QUIT:
-			*gamestate.running = 0;
+			*gamestate.state = GAMESTATE_QUIT;
 
 		default:;
 		}
@@ -455,6 +493,17 @@ static void update(void)
 
 	player_update(gamestate.player, gamestate.map);
 	projectiles_update(gamestate.projectiles, gamestate.map);
+	enemies_update(
+		gamestate.enemies, 
+		gamestate.map, 
+		gamestate.player, 
+		gamestate.projectiles
+	);
+
+	if(gamestate.player->hp <= 0)
+	{
+		*gamestate.state = GAMESTATE_GAMEOVER;
+	}
 }
 
 static void render(double interpolation, double delta)
@@ -521,9 +570,21 @@ static void render(double interpolation, double delta)
 	}
 
 	map_render(gamestate.map, camerax, cameray);
+	enemies_render(gamestate.enemies, interpolation, camerax, cameray);
 	projectiles_render(gamestate.projectiles, interpolation, camerax, cameray);
 	player_render(gamestate.player, interpolation, delta, camerax, cameray);
+
+	SDL_SetRenderDrawColor(gamestate.window->renderer, 255, 0, 0, 255);
+	SDL_RenderFillRect(
+		gamestate.window->renderer, 
+		&(SDL_Rect){HPBAR_X, HPBAR_Y, HPBAR_WIDTH, HPBAR_HEIGHT}
+	);
+
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 0, 0, 0, 255);
+	SDL_RenderDrawRect(
+		gamestate.window->renderer, 
+		&(SDL_Rect){HPBAR_X, HPBAR_Y, HPBAR_WIDTH, HPBAR_HEIGHT}
+	);
 }
 
 int main(int argc, char* argv[])
@@ -586,8 +647,8 @@ int main(int argc, char* argv[])
 	window_ctor(
 		&window, 
 		"Game Window", 
-		1200, 
-		675, 
+		WINDOW_WIDTH, 
+		WINDOW_HEIGHT, 
 		/*WINDOW_VSYNC | */WINDOW_FULLSCREEN
 	);
 
@@ -601,19 +662,27 @@ int main(int argc, char* argv[])
 	map_ctor(&map, window.renderer);
 
 	struct Player player;
-	player_ctor(&player, window.renderer);
+	player_ctor(
+		&player, 
+		(struct Vec2d){MAP_WIDTH / 2.0, MAP_HEIGHT / 2.0},
+		window.renderer
+	);
 
 	struct Projectiles projectiles;
 	projectiles_ctor(&projectiles, window.renderer);
 
-	int running = 1;
-	gamestate.running = &running;
+	struct Enemies enemies;
+	enemies_ctor(&enemies, window.renderer);
+
+	enum GameState state = GAMESTATE_RUNNING;
+	gamestate.state = &state;
 	gamestate.spritesheet = &spritesheet;
 	gamestate.window = &window;
 	gamestate.input = &input;
 	gamestate.map = &map;
 	gamestate.player = &player;
 	gamestate.projectiles = &projectiles;
+	gamestate.enemies = &enemies;
 
 	double value = 0.0;
 	transition_ctor(
@@ -628,7 +697,7 @@ int main(int argc, char* argv[])
 	uint64_t oldtime = getperformancecount();
 	unsigned ticks = 0;
 	double lag = 0.0;
-	while(running)
+	while(state == GAMESTATE_RUNNING)
 	{
 		uint64_t curtime = getperformancecount();
 		double delta = (curtime - oldtime) * 1000.0 / getperformancefreq(); //ms
@@ -668,6 +737,124 @@ int main(int argc, char* argv[])
 #endif
 	}
 
+	switch(state)
+	{
+	case GAMESTATE_WIN:
+		{
+			struct Font font;
+			font_ctor(
+				&font, 
+				"resources/font.ttf", 
+				48, 
+				(SDL_Color){255, 255, 255, 255},
+				window.renderer
+			);
+
+			struct Texture text;
+			texture_ctortext(&text, &font, "You Won!", window.renderer);
+
+			SDL_RenderCopy(
+				window.renderer, 
+				text.raw, 
+				NULL, 
+				&(SDL_Rect){
+					window.width / 2.0 - text.width / 2.0,
+					window.height / 2.0 - text.height / 2.0,
+					text.width,
+					text.height
+				}
+			);
+
+			window_render(&window);
+			int done = 0;
+			while(!done)
+			{
+				inputhandler_update(&input);
+				for(size_t i = 0; i < vec_getsize(input.events); i++)
+				{
+					if(input.events[i].type == SDL_KEYDOWN 
+						|| input.events[i].type == SDL_CONTROLLERBUTTONDOWN)
+					{
+						done = 1;
+					}
+				}
+
+				SDL_Delay(32);
+			}
+
+			texture_dtor(&text);
+			font_dtor(&font);
+		}
+		break;
+
+	case GAMESTATE_GAMEOVER:
+		{
+			struct Font font;
+			font_ctor(
+				&font, 
+				"resources/font.ttf", 
+				48, 
+				(SDL_Color){255, 255, 255, 255},
+				window.renderer
+			);
+
+			struct Texture text;
+			struct Texture image;
+
+			texture_ctortext(&text, &font, "Game Over", window.renderer);
+			texture_ctorimage(&image, "resources/grave.png", window.renderer);
+
+			SDL_RenderCopy(
+				window.renderer, 
+				text.raw, 
+				NULL, 
+				&(SDL_Rect){
+					window.width / 2.0 - text.width / 2.0,
+					window.height / 2.0 - 200,
+					text.width,
+					text.height
+				}
+			);
+
+			SDL_RenderCopy(
+				window.renderer, 
+				image.raw, 
+				NULL, 
+				&(SDL_Rect){
+					window.width / 2.0 - image.width * 12 / 2.0,
+					window.height / 2.0,
+					image.width * 12,
+					image.height * 12
+				}
+			);
+
+			window_render(&window);
+			int done = 0;
+			while(!done)
+			{
+				inputhandler_update(&input);
+				for(size_t i = 0; i < vec_getsize(input.events); i++)
+				{
+					if(input.events[i].type == SDL_KEYDOWN 
+						|| input.events[i].type == SDL_CONTROLLERBUTTONDOWN)
+					{
+						done = 1;
+					}
+				}
+
+				SDL_Delay(32);
+			}
+
+			texture_dtor(&image);
+			texture_dtor(&text);
+			font_dtor(&font);
+		}
+		break;
+
+	default:;
+	}
+
+	enemies_dtor(&enemies);
 	projectiles_dtor(&projectiles);
 	player_dtor(&player);
 	map_dtor(&map);

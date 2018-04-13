@@ -11,6 +11,8 @@
 #define PROJECTILE_WIDTH  8.0
 #define PROJECTILE_HEIGHT 8.0
 #define PROJECTILE_SCALE  4.0
+#define SPECIAL_DMG 100
+#define NORMAL_DMG 50
 
 enum ProjectileType
 {
@@ -30,8 +32,8 @@ struct Projectile
 
 struct Projectiles
 {
-	Vec(struct Projectile) projectiles;
 	struct Texture projectilesheet;
+	Vec(struct Projectile) projectiles;
 	SDL_Renderer* renderer;
 };
 
