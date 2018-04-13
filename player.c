@@ -3,6 +3,8 @@
 #include "API2/log.h"
 
 extern const double TICK_RATE; //XXX: hacky
+extern int touchedtop;
+extern int touchedbottom;
 
 struct Player* player_ctor(
 	struct Player* self, 
@@ -183,14 +185,40 @@ struct Player* player_ctor(
 	self->renderer = renderer;
 	self->selectedanimation = PLAYERSTANDING_FRONT;
 	self->hp = 100;
+	self->oldhp = 100;
 
+	static double _;
 	texture_ctorimage(&self->spritesheet, "resources/sprites.png", renderer);
+	transition_ctor(
+		&self->invincibility, 
+		TRANSITIONTYPE_DEFAULT, 
+		0.0, 
+		2500.0, 
+		2500.0, 
+		&_
+	);
+	self->invincibility.done = 1;
 	return self;
 }
 
 void player_update(struct Player* self, struct Map* map)
 {
 	log_assert(self, "is NULL");
+	if(!self->invincibility.done)
+	{
+		self->hp = self->oldhp;
+	}
+	else if(self->oldhp != self->hp)
+	{
+		self->invincibility.done = 0;
+		*self->invincibility.value = 0;
+		self->oldhp = self->hp;
+	}
+
+	if(self->hp < 0)
+	{
+		self->hp = 0;
+	}
 
 	struct Vec2d olddirection = self->direction;
 	self->oldpos = self->rect.pos;
@@ -204,6 +232,7 @@ void player_update(struct Player* self, struct Map* map)
 	{
 		self->rect.pos.x += self->force.x;
 	}
+
 	for(size_t i = 0; i < vec_getsize(map->tiles); i++)
 	{
 		if(rect_intersects(&self->rect, &map->tiles[i].rect))
@@ -278,6 +307,7 @@ void player_update(struct Player* self, struct Map* map)
 	}
 	if(self->rect.pos.y < 0)
 	{
+		touchedtop = 1;
 		self->rect.pos.y = 0;
 		self->force.y = 0.0;
 	}
@@ -288,6 +318,7 @@ void player_update(struct Player* self, struct Map* map)
 	}
 	if(self->rect.pos.y + self->rect.height > MAP_HEIGHT)
 	{
+		touchedbottom = 1;
 		self->rect.pos.y = MAP_HEIGHT - self->rect.height;
 		self->force.y = 0.0;
 	}
@@ -374,6 +405,15 @@ void player_render(
 	struct Rect srect = self->animations[self->selectedanimation].srects[
 		self->animations[self->selectedanimation].frame];
 
+	if(!self->invincibility.done)
+	{
+		SDL_SetTextureColorMod(self->spritesheet.raw, 50, 50, 50);
+	}
+	else
+	{
+		//SDL_SetTextureColorMod(self->spritesheet.raw, 255, 255, 255);
+	}
+
 	SDL_RenderCopy(
 		self->renderer, 
 		self->spritesheet.raw, 
@@ -392,6 +432,8 @@ void player_render(
 			self->rect.height
 		}
 	);
+
+	transition_update(&self->invincibility, delta);
 }
 
 void player_dtor(struct Player* self)

@@ -6,6 +6,7 @@
 #include "API2/font.h"
 #include "API2/rect.h"
 #include "API2/log.h"
+#include "API2/str.h"
 #include "projectile.h"
 #include "player.h"
 #include "enemy.h"
@@ -39,6 +40,12 @@ const double TICK_RATE = 1000.0 / TICKS_PER_SEC;
 #define HPBAR_WIDTH  250
 #define HPBAR_HEIGHT 25
 
+#define NUM_STAGES 7
+
+#define ONSCREENTEXT_Y 30
+#define TIMER_Y 30
+#define TIMER_X (WINDOW_WIDTH - 50)
+
 enum GameState
 {
 	GAMESTATE_RUNNING,
@@ -49,7 +56,10 @@ enum GameState
 
 struct Game
 {
+	struct Texture onscreentexts[NUM_STAGES];
 	struct Transition chargetransition;
+	struct Transition timer;
+	struct Texture timertext;
 	struct Window* window;
 	struct InputHandler* input;
 	struct Texture* spritesheet;
@@ -58,11 +68,20 @@ struct Game
 	struct Projectiles* projectiles;
 	struct Enemies* enemies;
 	enum GameState* state;
+	struct Font* font;
 	double shootcharge;
 	double dashcharge;
 	int shootcharging;
 	int dashcharging;
+	int stage;
 } gamestate;
+
+static int stagesdone[NUM_STAGES];
+int slimekills = 0;
+int ghostkills = 0;
+int touchedtop = 0;
+int touchedbottom = 0;
+static int gotsuper = 0;
 
 static void onerror(void* udata)
 {
@@ -125,7 +144,7 @@ void shoot(void)
 		);
 	}
 
-	if(gamestate.shootcharge == MAXCHARGE)
+	if(gamestate.shootcharge == MAXCHARGE || gotsuper)
 	{
 		projectiles_add(
 			gamestate.projectiles, 
@@ -171,6 +190,220 @@ void shoot(void)
 
 static void update(void)
 {
+	switch(gamestate.stage)
+	{
+	case 0:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				enemies_slimes(gamestate.enemies, 25);
+			}
+
+			struct Str text;
+			str_ctorfmt(&text, "%i", 10 - slimekills);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+			str_dtor(&text);
+
+			stagesdone[gamestate.stage] = 1;
+			if(slimekills >= 10)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	case 1:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				enemies_ghosts(gamestate.enemies, 25);
+			}
+
+			struct Str text;
+			str_ctorfmt(&text, "%i", 10 - ghostkills);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+			str_dtor(&text);
+
+			stagesdone[gamestate.stage] = 1;
+			if(ghostkills >= 10)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	case 2:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				touchedtop = 0;
+				gamestate.timer.done = 0;
+			}
+
+			struct Str text;
+			str_ctorfmt(&text, "%i", 13 - ((int)*gamestate.timer.value) / 1000);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+			str_dtor(&text);
+			
+			stagesdone[gamestate.stage] = 1;
+			if(gamestate.timer.done)
+			{
+				gamestate.player->hp = 0;
+			}
+
+			if(touchedtop)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	case 3:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				touchedbottom = 0;
+				*gamestate.timer.value = 0.0;
+				gamestate.timer.done = 0;
+			}
+			
+			struct Str text;
+			str_ctorfmt(&text, "%i", 13 - ((int)*gamestate.timer.value) / 1000);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+
+			str_dtor(&text);
+			stagesdone[gamestate.stage] = 1;
+			if(gamestate.timer.done)
+			{
+				gamestate.player->hp = 0;
+			}
+
+			if(touchedbottom)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	case 4:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				transition_ctor(
+					&gamestate.timer, 
+					TRANSITIONTYPE_DEFAULT,
+					0,
+					25000,
+					25000,
+					gamestate.timer.value
+				);
+				enemies_slimes(gamestate.enemies, 90);
+				enemies_ghosts(gamestate.enemies, 90);
+			}
+
+			struct Str text;
+			str_ctorfmt(&text, "%i", 25 - ((int)*gamestate.timer.value) / 1000);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+			str_dtor(&text);
+			
+			stagesdone[gamestate.stage] = 1;
+			if(gamestate.timer.done)
+			{
+				gamestate.stage++;
+				for(size_t i = 0; i < 180; i++)
+				{
+					vec_popback(gamestate.enemies->enemies);
+				}
+			}
+		}
+		break;
+
+	case 5:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+			
+			}
+
+			stagesdone[gamestate.stage] = 1;
+			if(1)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	case 6:
+		{
+			if(!stagesdone[gamestate.stage])
+			{
+				enemies_terrain(gamestate.enemies, gamestate.map);
+				gotsuper = 1;
+			}
+
+			size_t numalive = 0;
+			for(size_t i = 0; i < vec_getsize(gamestate.enemies->enemies); i++)
+			{
+				if(gamestate.enemies->enemies[i].hp > 0)
+				{
+					numalive++;
+				}
+			}
+
+			struct Str text;
+			str_ctorfmt(&text, "%zu", numalive);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+
+			str_dtor(&text);
+			stagesdone[gamestate.stage] = 1;
+			if(numalive == 0)
+			{
+				gamestate.stage++;
+			}
+		}
+		break;
+
+	default:
+		*gamestate.state = GAMESTATE_WIN;
+		return;
+	}
+
 	struct Vec2d movement = {0};
 	if(gamestate.input->keystate[SDL_SCANCODE_A]
 		|| gamestate.input->keystate[SDL_SCANCODE_H] 
@@ -491,7 +724,6 @@ static void update(void)
 		}
 	}
 
-	player_update(gamestate.player, gamestate.map);
 	projectiles_update(gamestate.projectiles, gamestate.map);
 	enemies_update(
 		gamestate.enemies, 
@@ -499,6 +731,7 @@ static void update(void)
 		gamestate.player, 
 		gamestate.projectiles
 	);
+	player_update(gamestate.player, gamestate.map);
 
 	if(gamestate.player->hp <= 0)
 	{
@@ -535,6 +768,7 @@ static void render(double interpolation, double delta)
 	}
 
 	transition_update(&gamestate.chargetransition, delta);
+	transition_update(&gamestate.timer, delta);
 	if(gamestate.dashcharge == MAXCHARGE || gamestate.shootcharge == MAXCHARGE)
 	{
 		SDL_SetTextureColorMod(
@@ -574,16 +808,56 @@ static void render(double interpolation, double delta)
 	projectiles_render(gamestate.projectiles, interpolation, camerax, cameray);
 	player_render(gamestate.player, interpolation, delta, camerax, cameray);
 
+	SDL_RenderCopy(
+		gamestate.window->renderer, 
+		gamestate.onscreentexts[gamestate.stage].raw, 
+		NULL,
+		&(SDL_Rect){
+			WINDOW_WIDTH / 2.0 - gamestate.onscreentexts[gamestate.stage].width
+				/ 2.0,
+			ONSCREENTEXT_Y,
+			gamestate.onscreentexts[gamestate.stage].width,
+			gamestate.onscreentexts[gamestate.stage].height
+		}
+	);
+
+	SDL_SetRenderDrawColor(gamestate.window->renderer, 50, 50, 50, 255);
+	SDL_RenderFillRect(
+		gamestate.window->renderer, 
+		&(SDL_Rect){
+			HPBAR_X, 
+			HPBAR_Y, 
+			HPBAR_WIDTH,
+			HPBAR_HEIGHT
+		}
+	);
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 255, 0, 0, 255);
 	SDL_RenderFillRect(
 		gamestate.window->renderer, 
-		&(SDL_Rect){HPBAR_X, HPBAR_Y, HPBAR_WIDTH, HPBAR_HEIGHT}
+		&(SDL_Rect){
+			HPBAR_X, 
+			HPBAR_Y, 
+			HPBAR_WIDTH * (gamestate.player->oldhp / 100.0), 
+			HPBAR_HEIGHT
+		}
 	);
 
 	SDL_SetRenderDrawColor(gamestate.window->renderer, 0, 0, 0, 255);
 	SDL_RenderDrawRect(
 		gamestate.window->renderer, 
 		&(SDL_Rect){HPBAR_X, HPBAR_Y, HPBAR_WIDTH, HPBAR_HEIGHT}
+	);
+
+	SDL_RenderCopy(
+		gamestate.window->renderer, 
+		gamestate.timertext.raw,
+		NULL,
+		&(SDL_Rect){
+			TIMER_X - gamestate.timertext.width / 2.0,
+			TIMER_Y,
+			gamestate.timertext.width,
+			gamestate.timertext.height,
+		}
 	);
 }
 
@@ -649,7 +923,7 @@ int main(int argc, char* argv[])
 		"Game Window", 
 		WINDOW_WIDTH, 
 		WINDOW_HEIGHT, 
-		/*WINDOW_VSYNC | */WINDOW_FULLSCREEN
+		WINDOW_VSYNC | WINDOW_FULLSCREEN
 	);
 
 	struct InputHandler input;
@@ -674,6 +948,64 @@ int main(int argc, char* argv[])
 	struct Enemies enemies;
 	enemies_ctor(&enemies, window.renderer);
 
+	struct Font stagefont;
+	font_ctor(
+		&stagefont, 
+		"resources/font.ttf", 
+		24,
+		(SDL_Color){255, 255, 255, 255}, 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[0], 
+		&stagefont,
+		"Kill 10 Slimes!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[1], 
+		&stagefont,
+		"Kill 10 Ghosts!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[2], 
+		&stagefont,
+		"Reach the top of the map within 13 seconds!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[3], 
+		&stagefont,
+		"Reach the bottom of the map within 13 seconds!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[4], 
+		&stagefont,
+		"Survive 25 seconds!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[5], 
+		&stagefont,
+		"Defeat the boss!", 
+		window.renderer
+	);
+
+	texture_ctortext(
+		&gamestate.onscreentexts[6], 
+		&stagefont,
+		"Kill everything!", 
+		window.renderer
+	);
+
 	enum GameState state = GAMESTATE_RUNNING;
 	gamestate.state = &state;
 	gamestate.spritesheet = &spritesheet;
@@ -683,16 +1015,30 @@ int main(int argc, char* argv[])
 	gamestate.player = &player;
 	gamestate.projectiles = &projectiles;
 	gamestate.enemies = &enemies;
+	gamestate.font = &stagefont;
 
-	double value = 0.0;
+	double value1 = 0.0;
 	transition_ctor(
 		&gamestate.chargetransition, 
 		TRANSITIONTYPE_FADE,
 		0,
 		255,
 		CHARGETRANSITIONDURATION,
-		&value
+		&value1
 	);
+
+	double value2 = 0.0;
+	transition_ctor(
+		&gamestate.timer, 
+		TRANSITIONTYPE_DEFAULT,
+		0,
+		13000,
+		13000,
+		&value2
+	);
+	gamestate.timer.done = 1;
+	gamestate.stage = 5;
+	texture_ctortext(&gamestate.timertext, &stagefont, " ", window.renderer);
 
 	uint64_t oldtime = getperformancecount();
 	unsigned ticks = 0;
@@ -766,21 +1112,7 @@ int main(int argc, char* argv[])
 			);
 
 			window_render(&window);
-			int done = 0;
-			while(!done)
-			{
-				inputhandler_update(&input);
-				for(size_t i = 0; i < vec_getsize(input.events); i++)
-				{
-					if(input.events[i].type == SDL_KEYDOWN 
-						|| input.events[i].type == SDL_CONTROLLERBUTTONDOWN)
-					{
-						done = 1;
-					}
-				}
-
-				SDL_Delay(32);
-			}
+			SDL_Delay(5000);
 
 			texture_dtor(&text);
 			font_dtor(&font);
@@ -829,21 +1161,7 @@ int main(int argc, char* argv[])
 			);
 
 			window_render(&window);
-			int done = 0;
-			while(!done)
-			{
-				inputhandler_update(&input);
-				for(size_t i = 0; i < vec_getsize(input.events); i++)
-				{
-					if(input.events[i].type == SDL_KEYDOWN 
-						|| input.events[i].type == SDL_CONTROLLERBUTTONDOWN)
-					{
-						done = 1;
-					}
-				}
-
-				SDL_Delay(32);
-			}
+			SDL_Delay(5000);
 
 			texture_dtor(&image);
 			texture_dtor(&text);
@@ -854,6 +1172,15 @@ int main(int argc, char* argv[])
 	default:;
 	}
 
+	texture_dtor(&gamestate.onscreentexts[0]);
+	texture_dtor(&gamestate.onscreentexts[1]);
+	texture_dtor(&gamestate.onscreentexts[2]);
+	texture_dtor(&gamestate.onscreentexts[3]);
+	texture_dtor(&gamestate.onscreentexts[4]);
+	texture_dtor(&gamestate.onscreentexts[5]);
+	texture_dtor(&gamestate.onscreentexts[6]);
+	texture_dtor(&gamestate.timertext);
+	font_dtor(&stagefont);
 	enemies_dtor(&enemies);
 	projectiles_dtor(&projectiles);
 	player_dtor(&player);

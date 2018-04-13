@@ -1,6 +1,7 @@
 #ifndef PLAYER_H
 #define PLAYER_H
 
+#include "API2/transition.h"
 #include "API2/animation.h"
 #include "API2/texture.h"
 #include "API2/rect.h"
@@ -32,6 +33,7 @@ enum PlayerWalking
 struct Player
 {
 	struct Animation animations[NUM_ANIMATIONS];
+	struct Transition invincibility;
 	struct Texture spritesheet;
 	struct Rect rect;
 	struct Vec2d oldpos;
@@ -39,6 +41,7 @@ struct Player
 	struct Vec2d force;
 	SDL_Renderer* renderer;
 	size_t selectedanimation;
+	int oldhp;
 	int hp;
 };
 

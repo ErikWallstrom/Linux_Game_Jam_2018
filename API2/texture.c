@@ -105,6 +105,7 @@ struct Texture* texture_ctortext(
 	}
 
 	//NOTE: Line below makes transparency work for two textures on eachother
+	SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
 	SDL_SetTextureBlendMode(self->raw, SDL_BLENDMODE_BLEND);
 	SDL_SetRenderTarget(renderer, self->raw);
 	SDL_RenderClear(renderer);
