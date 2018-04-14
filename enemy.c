@@ -5,18 +5,19 @@
 #define GHOST_DMG   10
 #define GHOST_SPEED 50.0
 #define SLIME_HP    100
-#define SLIME_DMG   20
+#define SLIME_DMG   10
 #define SLIME_SPEED 150.0
 #define TREE_HP     100
-#define TREE_DMG    20
+#define TREE_DMG    10
 #define TREE_SPEED  150.0
 #define STONE_HP    200
-#define STONE_DMG   20
+#define STONE_DMG   10
 #define STONE_SPEED 100.0
 
 extern const double TICK_RATE; //XXX: hacky
 extern int slimekills;
 extern int ghostkills;
+extern int gotsuper;
 
 struct Enemies* enemies_ctor(struct Enemies* self, SDL_Renderer* renderer)
 {
@@ -174,7 +175,7 @@ void enemies_update(
 				break;
 
 			case ENEMYTYPE_SLIME:
-				if(isclose)
+				if(isclose || gotsuper)
 				{
 					self->enemies[i].rect.pos.x += direction.x
 						* (SLIME_SPEED / TICK_RATE);
@@ -264,11 +265,31 @@ void enemies_update(
 
 				if(fabs(knockback.x) > fabs(knockback.y))
 				{
-					player->force.y = PLAYER_DASHDECAY * 10;
+					if(player->invincibility.done)
+					{
+						if(knockback.x < 0.0)
+						{
+							player->force.x = -PLAYER_DASHDECAY * 10;
+						}
+						else
+						{
+							player->force.x = PLAYER_DASHDECAY * 10;
+						}
+					}
 				}
 				else
 				{
-					player->force.x = PLAYER_DASHDECAY * 10;
+					if(player->invincibility.done)
+					{
+						if(knockback.y < 0.0)
+						{
+							player->force.y = -PLAYER_DASHDECAY * 10;
+						}
+						else
+						{
+							player->force.y = PLAYER_DASHDECAY * 10;
+						}
+					}
 				}
 
 				break;
@@ -282,7 +303,7 @@ void enemies_update(
 						&projectiles->projectiles[j].rect))
 				{
 					projectiles->projectiles[j].done = 1;
-					self->enemies[i].hp -= (projectiles->projectiles[i].type
+					self->enemies[i].hp -= (projectiles->projectiles[j].type
 						== PROJECTILETYPE_NORMAL) 
 						? NORMAL_DMG 
 						: SPECIAL_DMG;

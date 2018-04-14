@@ -4,6 +4,7 @@
 #include "API2/texture.h"
 #include "API2/rect.h"
 #include "API2/vec.h"
+#include "player.h"
 #include "map.h"
 
 #define PROJECTILE_RANGE  420.0
@@ -48,6 +49,11 @@ void projectiles_add(
 	enum ProjectileType type
 );
 void projectiles_update(struct Projectiles* self, struct Map* map);
+void projectiles_updateboss(
+	struct Projectiles* self, 
+	struct Map* map, 
+	struct Player* player
+);
 void projectiles_render(
 	struct Projectiles* self, 
 	double interpolation,

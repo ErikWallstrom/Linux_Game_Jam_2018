@@ -1,6 +1,7 @@
 #include "API2/inputhandler.h"
 #include "API2/initialize.h"
 #include "API2/transition.h"
+#include "API2/argparser.h"
 #include "API2/texture.h"
 #include "API2/window.h"
 #include "API2/font.h"
@@ -10,6 +11,7 @@
 #include "projectile.h"
 #include "player.h"
 #include "enemy.h"
+#include "boss.h"
 #include "map.h"
 /*
 #include <netinet/tcp.h>
@@ -69,6 +71,7 @@ struct Game
 	struct Enemies* enemies;
 	enum GameState* state;
 	struct Font* font;
+	struct Boss* boss;
 	double shootcharge;
 	double dashcharge;
 	int shootcharging;
@@ -81,7 +84,13 @@ int slimekills = 0;
 int ghostkills = 0;
 int touchedtop = 0;
 int touchedbottom = 0;
-static int gotsuper = 0;
+int gotsuper = 0;
+
+static void onargerror(void* udata)
+{
+	argparser_printhelp(udata);
+	abort();
+}
 
 static void onerror(void* udata)
 {
@@ -352,11 +361,31 @@ static void update(void)
 		{
 			if(!stagesdone[gamestate.stage])
 			{
-			
+				static struct Boss boss;
+				boss_ctor(&boss, gamestate.window->renderer);
+				gamestate.boss = &boss;
 			}
 
+			struct Str text;
+			str_ctorfmt(&text, "%i", gamestate.boss->hp);
+			texture_dtor(&gamestate.timertext);
+			texture_ctortext(
+				&gamestate.timertext, 
+				gamestate.font, 
+				text.data,
+				gamestate.window->renderer
+			);
+
+			str_dtor(&text);
+			boss_update(
+				gamestate.boss, 
+				gamestate.player, 
+				gamestate.projectiles,
+				gamestate.map
+			);
+
 			stagesdone[gamestate.stage] = 1;
-			if(1)
+			if(gamestate.boss->hp <= 0)
 			{
 				gamestate.stage++;
 			}
@@ -585,26 +614,6 @@ static void update(void)
 				*gamestate.state = GAMESTATE_QUIT;
 				break;
 
-			case SDLK_r:
-				*gamestate.state = GAMESTATE_WIN;
-				break;
-
-			case SDLK_e:
-				*gamestate.state = GAMESTATE_GAMEOVER;
-				break;
-
-			case SDLK_o:
-				enemies_terrain(gamestate.enemies, gamestate.map);
-				break;
-
-			case SDLK_p:
-				enemies_slimes(gamestate.enemies, 25);
-				break;
-
-			case SDLK_i:
-				enemies_ghosts(gamestate.enemies, 25);
-				break;
-
 			case SDLK_LSHIFT:
 				if(gamestate.player->force.x == 0.0
 					&& gamestate.player->force.y == 0.0)
@@ -731,8 +740,8 @@ static void update(void)
 		gamestate.player, 
 		gamestate.projectiles
 	);
-	player_update(gamestate.player, gamestate.map);
 
+	player_update(gamestate.player, gamestate.map);
 	if(gamestate.player->hp <= 0)
 	{
 		*gamestate.state = GAMESTATE_GAMEOVER;
@@ -807,6 +816,10 @@ static void render(double interpolation, double delta)
 	enemies_render(gamestate.enemies, interpolation, camerax, cameray);
 	projectiles_render(gamestate.projectiles, interpolation, camerax, cameray);
 	player_render(gamestate.player, interpolation, delta, camerax, cameray);
+	if(gamestate.boss)
+	{
+		boss_render(gamestate.boss, interpolation, delta, camerax, cameray);
+	}
 
 	SDL_RenderCopy(
 		gamestate.window->renderer, 
@@ -863,6 +876,38 @@ static void render(double interpolation, double delta)
 
 int main(int argc, char* argv[])
 {
+	struct ArgParserLongOpt options[] = {
+		{
+			"vsync", 
+			"Enable vsync. May reduce screen tear nad increase input lag", 
+			0
+		},
+		{"windowed", "Disable fullscreen", 0}
+	};
+
+
+	struct ArgParser argparser;
+	log_seterrorhandler(onargerror, &argparser);
+	argparser_ctor(
+		&argparser, 
+		argc, 
+		argv, 
+		options, 
+		sizeof options / sizeof *options
+	);
+
+	int windowflags = WINDOW_DEFAULT;
+	if(argparser.results[0].used)
+	{
+		windowflags |= WINDOW_VSYNC;
+	}
+
+	if(!argparser.results[1].used)
+	{
+		windowflags |= WINDOW_FULLSCREEN;
+	}
+
+	argparser_dtor(&argparser);
 	log_seterrorhandler(onerror, NULL);
 	/* if(argc < 3)
 	{
@@ -923,7 +968,7 @@ int main(int argc, char* argv[])
 		"Game Window", 
 		WINDOW_WIDTH, 
 		WINDOW_HEIGHT, 
-		WINDOW_VSYNC | WINDOW_FULLSCREEN
+		windowflags
 	);
 
 	struct InputHandler input;
@@ -1037,7 +1082,6 @@ int main(int argc, char* argv[])
 		&value2
 	);
 	gamestate.timer.done = 1;
-	gamestate.stage = 5;
 	texture_ctortext(&gamestate.timertext, &stagefont, " ", window.renderer);
 
 	uint64_t oldtime = getperformancecount();
@@ -1105,15 +1149,34 @@ int main(int argc, char* argv[])
 				NULL, 
 				&(SDL_Rect){
 					window.width / 2.0 - text.width / 2.0,
-					window.height / 2.0 - text.height / 2.0,
+					window.height / 2.0 - text.height / 2.0 - 50,
 					text.width,
 					text.height
 				}
 			);
 
-			window_render(&window);
-			SDL_Delay(5000);
+			struct Texture timetext;
+			struct Str str;
+			str_ctorfmt(&str, "Clear Time: %gs", SDL_GetTicks() / 1000.0);
+			texture_ctortext(&timetext, &font, str.data, window.renderer);
+			str_dtor(&str);
 
+			SDL_RenderCopy(
+				window.renderer, 
+				timetext.raw, 
+				NULL, 
+				&(SDL_Rect){
+					window.width / 2.0 - text.width * 0.4,
+					window.height / 2.0 - text.height / 2.0 + 100,
+					text.width * 0.8,
+					text.height / 2.0
+				}
+			);
+
+			window_render(&window);
+			SDL_Delay(8000);
+
+			texture_dtor(&timetext);
 			texture_dtor(&text);
 			font_dtor(&font);
 		}

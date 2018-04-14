@@ -193,8 +193,8 @@ struct Player* player_ctor(
 		&self->invincibility, 
 		TRANSITIONTYPE_DEFAULT, 
 		0.0, 
-		2500.0, 
-		2500.0, 
+		1500.0, 
+		1500.0, 
 		&_
 	);
 	self->invincibility.done = 1;

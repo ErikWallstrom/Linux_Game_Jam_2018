@@ -97,6 +97,105 @@ void projectiles_update(struct Projectiles* self, struct Map* map)
 	//TODO: Clean done projectiles (memory leak)
 }
 
+void projectiles_updateboss(
+	struct Projectiles* self, 
+	struct Map* map, 
+	struct Player* player)
+{
+	log_assert(self, "is NULL");
+	log_assert(player, "is NULL");
+
+	SDL_SetTextureColorMod(self->projectilesheet.raw, 255, 0, 255);
+	for(size_t i = 0; i < vec_getsize(self->projectiles); i++)
+	{
+		if(!self->projectiles[i].done)
+		{
+			self->projectiles[i].oldpos = self->projectiles[i].rect.pos;
+			self->projectiles[i].rect.pos.x 
+				+= cos(self->projectiles[i].rotation)
+				* ((PROJECTILE_SPEED * 0.5) / TICK_RATE);
+			self->projectiles[i].rect.pos.y 
+				+= sin(self->projectiles[i].rotation)
+				* ((PROJECTILE_SPEED * 0.5) / TICK_RATE);
+
+			for(size_t j = 0; j < vec_getsize(map->tiles); j++)
+			{
+				if(rect_intersects(
+					&self->projectiles[i].rect, 
+					&map->tiles[j].rect))
+				{
+					self->projectiles[i].done = 1;
+					break;
+				}
+			}
+
+			if(rect_intersects(&self->projectiles[i].rect, &player->rect))
+			{
+				player->hp -= 10;
+				struct Vec2d knockback;
+				vec2d_sub(
+					(struct Vec2d[1]){
+						rect_getpos(&player->rect, RECTREGPOINT_CENTER)
+					},
+					(struct Vec2d[1]){
+						rect_getpos(
+							&self->projectiles[i].rect, 
+							RECTREGPOINT_CENTER
+						)
+					},
+					&knockback
+				);
+
+				if(fabs(knockback.x) > fabs(knockback.y))
+				{
+					if(player->invincibility.done)
+					{
+						if(knockback.x < 0.0)
+						{
+							player->force.x = -PLAYER_DASHDECAY * 10;
+						}
+						else
+						{
+							player->force.x = PLAYER_DASHDECAY * 10;
+						}
+					}
+				}
+				else
+				{
+					if(player->invincibility.done)
+					{
+						if(knockback.y < 0.0)
+						{
+							player->force.y = -PLAYER_DASHDECAY * 10;
+						}
+						else
+						{
+							player->force.y = PLAYER_DASHDECAY * 10;
+						}
+					}
+				}
+			}
+			
+			struct Vec2d temp;
+			vec2d_sub(
+				&self->projectiles[i].rect.pos, 
+				&self->projectiles[i].start,
+				&temp
+			);
+
+			double length;
+			vec2d_length(&temp, &length);
+			int isspecial = self->projectiles[i].type;
+			if(length > ((isspecial) 
+				? PROJECTILE_RANGE * 2.0 
+				: PROJECTILE_RANGE * 1.5))
+			{
+				self->projectiles[i].done = 1;
+			}
+		}
+	}
+}
+
 void projectiles_render(
 	struct Projectiles* self, 
 	double interpolation, 
