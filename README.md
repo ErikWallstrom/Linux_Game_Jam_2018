@@ -5,6 +5,8 @@
 Tested on Arch Linux with an XBox 360 controller. Game controller is strongly 
 recommended.
 
+![](screenshot.png)
+
 ## Dependencies
 
 Ubuntu:
@@ -38,3 +40,20 @@ sudo pacman -S sdl2 sdl2_image sdl2_ttf
 * Press `B button` to shoot
 * Hold `B button` and release for special attack
 
+## Compile
+
+```bash
+mkdir build
+make release
+```
+
+## Start game
+
+```bash
+build/ving
+```
+
+## Options
+
+* `--vsync` - Enable vsync, may perform better or worse, may remove screen tear
+* `--windowed` - Start game in windowed mode
