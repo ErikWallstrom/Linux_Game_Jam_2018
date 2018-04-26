@@ -21,7 +21,7 @@ struct Window* window_ctor(
 		width,
 		height,
 		(flags & WINDOW_FULLSCREEN) ? 
-			SDL_WINDOW_FULLSCREEN : SDL_WINDOW_SHOWN
+			SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_SHOWN
 	);
 	if(!self->raw)
 	{

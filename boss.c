@@ -255,9 +255,9 @@ void boss_render(
 		transition_update(&self->rotation, delta);
 	}
 	
-	projectiles_render(&self->projectiles, interpolation, camerax, cameray);
 	if(self->hp > 0)
 	{
+		projectiles_render(&self->projectiles, interpolation, camerax, cameray);
 		SDL_RenderCopyEx(
 			self->renderer, 
 			self->texture.raw, 
